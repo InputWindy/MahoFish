@@ -116,6 +116,7 @@
 | 定义 | `Usage(steps, tokens, seconds)`；`RunResult(answer, steps, usage, stopped_reason)` |
 | 规则 | `stopped_reason` 必须是稳定枚举：`final`、`step budget exhausted`、`token budget exhausted`、`time budget exhausted`、`llm error: <detail>`、`policy error: <detail>`。日志/评测按字符串前缀匹配 |
 | 失败来源 | `Usage.estimated_tokens` 记录由估算（非 provider 上报）计入的 token，用于判断预算数字的可信度 |
+| 故障可见 | `RunResult.faults: tuple[Fault(step, source, message), ...]`：**每个被兜底的故障都必须记录**，开发期同时立即打印 `FAULT`，禁止静默吞掉 |
 | 允许扩展 | 加 `cost`、`trace_id`、`facts_used` |
 | 禁止 | 自由文本 reason；在 RunResult 里塞对话历史 |
 
@@ -128,7 +129,7 @@
 | 失败策略（不得 fatal） | LLM 异常 → 重试 `max_llm_retries` 次，仍失败返回 `stopped_reason="llm error: ..."`；工具异常 → `Observation.failure("tool crashed: ...")`；`Policy.check` 异常 → deny（fail-closed）；`Policy.exhausted/spend` 异常 → 按 `policy error` 停止或忽略；`Memory.view/add/compact` 异常 → 降级并继续 |
 | 允许扩展 | 换范式（Plan-Execute / Reflexion）= 新循环实现，接口不变；可注入 `observer: TurnObserver`，每轮写入后回调 |
 | observer 约束 | core 只调用 `observer.on_turn(turn)`，不得读取 turn 内容做判断；observer 异常必须吞掉，不得影响循环结果 |
-| 禁止 | 循环内 import 具体工具/registry/后端；循环内实现摘要逻辑；循环内写盘 |
+| 禁止 | 循环内 import 具体工具/registry/后端；循环内实现摘要逻辑；循环内写盘；**静默吞掉可恢复故障（必须走 `Fault` 记录）** |
 
 ### C13 · 配置（外部输入汇点）
 

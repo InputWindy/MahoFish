@@ -154,11 +154,21 @@ class Verdict:
 
 
 @dataclass(frozen=True)
+class Fault:
+    """A handled failure. Handled never means silent."""
+
+    step: int
+    source: str
+    message: str
+
+
+@dataclass(frozen=True)
 class RunResult:
     answer: str
     steps: int
     usage: Usage
     stopped_reason: str
+    faults: tuple[Fault, ...] = ()
 
 
 class ToolContext:

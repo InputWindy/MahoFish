@@ -117,9 +117,11 @@ def main(argv: list[str] | None = None) -> int:
             scope=_safe_call(pack.scope_for, args.goal, default=None),
             facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
         )
-        on_event = None
-        if not args.quiet:
-            def on_event(step: int, kind: str, text: str) -> None:
+        def on_event(step: int, kind: str, text: str) -> None:
+            if kind == "fault":
+                print(f"[{step:02d}]   FAULT | {text}", file=sys.stderr, flush=True)
+                return
+            if not args.quiet:
                 print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
 
         agent = Agent(
@@ -142,6 +144,10 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\n=== RESULT ===")
     print(result.answer)
+    if result.faults:
+        print(f"\n[faults] {len(result.faults)} handled failure(s):")
+        for fault in result.faults:
+            print(f"  - step {fault.step} {fault.source}: {fault.message}")
     print(
         f"\n[stats] steps={result.steps} tokens={result.usage.tokens} "
         f"(estimated={result.usage.estimated_tokens}) "

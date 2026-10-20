@@ -16,6 +16,7 @@ from typing import Callable, Sequence
 
 from .contracts import (
     Decision,
+    Fault,
     LLMBackend,
     Memory,
     Message,
@@ -57,7 +58,10 @@ Rules:
 EventHook = Callable[[int, str, str], None]
 
 
-def _render_tools(specs: Sequence[ToolSpec]) -> str:
+def _render_tools(
+    specs: Sequence[ToolSpec],
+    on_bad: Callable[[str], None] | None = None,
+) -> str:
     if not specs:
         return "(none)"
     lines: list[str] = []
@@ -65,7 +69,10 @@ def _render_tools(specs: Sequence[ToolSpec]) -> str:
         try:
             lines.append(spec.render())
         except Exception as exc:  # malformed spec must not kill startup
-            lines.append(f"- {getattr(spec, 'name', '?')}: (unrenderable: {exc})")
+            name = getattr(spec, "name", "?")
+            lines.append(f"- {name}: (unrenderable: {exc})")
+            if on_bad is not None:
+                on_bad(f"tool spec {name!r} unrenderable: {exc}")
     return "\n".join(lines)
 
 
@@ -97,9 +104,13 @@ class Agent:
         self._retry_backoff = max(0.0, retry_backoff)
 
     def run(self) -> RunResult:
+        self._faults = []
         system = SYSTEM_PROMPT.format(
             protocol=PROTOCOL_HINT,
-            tools=_render_tools(self._safe_specs()),
+            tools=_render_tools(
+                self._safe_specs(),
+                on_bad=lambda msg: self._fault(0, "registry", msg),
+            ),
             domain_hints=self._hints,
         )
         started = time.monotonic()
@@ -112,13 +123,9 @@ class Agent:
                 stopped, reason = self._policy.exhausted()
             except Exception as exc:  # a broken policy must stop, not crash
                 stopped, reason = True, f"policy error: {exc}"
+                self._fault(step, "policy", f"exhausted failed: {exc}")
             if stopped:
-                return RunResult(
-                    answer=f"Stopped: {reason}",
-                    steps=usage.steps,
-                    usage=usage,
-                    stopped_reason=reason,
-                )
+                return self._result(f"Stopped: {reason}", usage, reason)
 
             step += 1
             usage = self._compact(step, usage, started)
@@ -127,7 +134,7 @@ class Agent:
             try:
                 view = self._memory.view(budget)
             except Exception as exc:  # degraded memory: continue with the goal only
-                self._emit(step, "memory", f"view failed: {exc}")
+                self._fault(step, "memory", f"view failed: {exc}")
                 view = []
             messages: Sequence[Message] = [
                 Message(role=Role.SYSTEM, content=system),
@@ -138,13 +145,8 @@ class Agent:
                 reply = self._ask(step, messages)
             except Exception as exc:
                 reason = f"llm error: {exc}"
-                self._emit(step, "fatal", reason)
-                return RunResult(
-                    answer=f"Stopped: {reason}",
-                    steps=usage.steps,
-                    usage=usage,
-                    stopped_reason=reason,
-                )
+                self._fault(step, "llm", str(exc))
+                return self._result(f"Stopped: {reason}", usage, reason)
 
             text = reply.text if isinstance(reply.text, str) else str(reply.text or "")
             reply_tokens = (
@@ -177,12 +179,7 @@ class Agent:
 
             if decision.is_final:
                 self._remember(step, decision, None)
-                return RunResult(
-                    answer=decision.final or "",
-                    steps=usage.steps,
-                    usage=usage,
-                    stopped_reason="final",
-                )
+                return self._result(decision.final or "", usage, "final")
 
             signature = _signature(decision)
             if signature == last_signature:
@@ -207,10 +204,10 @@ class Agent:
                 if attempt >= self._max_retries:
                     raise
                 attempt += 1
-                self._emit(
+                self._fault(
                     step,
-                    "retry",
-                    f"llm error: {exc}; retry {attempt}/{self._max_retries}",
+                    "llm-retry",
+                    f"{exc}; retry {attempt}/{self._max_retries}",
                 )
                 if self._retry_backoff:
                     time.sleep(self._retry_backoff * attempt)
@@ -221,7 +218,7 @@ class Agent:
         try:
             result = self._memory.compact(self._summarizer)
         except Exception as exc:  # compaction must never break the run
-            self._emit(step, "compact", f"failed: {exc}")
+            self._fault(step, "compact", str(exc))
             return usage
         if not result.folded:
             return usage
@@ -245,12 +242,12 @@ class Agent:
         try:
             self._memory.add(turn)
         except Exception as exc:
-            self._emit(step, "memory", f"add failed: {exc}")
+            self._fault(step, "memory", f"add failed: {exc}")
         for observer in self._observers:
             try:
                 observer.on_turn(turn)
             except Exception as exc:  # observers must never break the run
-                self._emit(step, "observer", f"failed: {exc}")
+                self._fault(step, "observer", str(exc))
 
     def _execute(self, step: int, decision: Decision) -> Observation:
         action = decision.action
@@ -268,6 +265,7 @@ class Agent:
                 verdict = self._policy.check(tool.spec, action.args)
             except Exception as exc:
                 verdict = Verdict.deny(f"policy error (fail-closed): {exc}")
+                self._fault(step, "policy", f"check failed: {exc}")
             if not verdict.allowed:
                 observation = Observation.failure(f"denied by policy: {verdict.reason}")
             else:
@@ -275,7 +273,13 @@ class Agent:
                     observation = tool.run(action.args, ToolContext(step=step))
                 except Exception as exc:
                     observation = Observation.failure(f"tool crashed: {exc}")
+                    self._fault(step, "tool", f"{action.tool}: {exc}")
                 if not isinstance(observation, Observation):
+                    self._fault(
+                        step,
+                        "tool",
+                        f"{action.tool} returned {type(observation).__name__}",
+                    )
                     observation = Observation.failure(
                         f"tool {action.tool!r} returned {type(observation).__name__}, "
                         "expected Observation"
@@ -291,32 +295,47 @@ class Agent:
         try:
             return list(self._tools.specs())
         except Exception as exc:  # a broken registry degrades to "no tools"
-            self._emit(0, "registry", f"specs failed: {exc}")
+            self._fault(0, "registry", f"specs failed: {exc}")
             return []
 
     def _safe_get(self, name: str):
         try:
             return self._tools.get(name)
         except Exception as exc:
-            self._emit(0, "registry", f"get({name!r}) failed: {exc}")
+            self._fault(0, "registry", f"get({name!r}) failed: {exc}")
             return None
 
     def _limit_tokens(self) -> int:
         try:
             return int(self._policy.max_tokens)
-        except Exception:
+        except Exception as exc:
+            self._fault(0, "policy", f"max_tokens failed: {exc}")
             return 200_000
 
     def _spend(self, usage: Usage, step: int) -> None:
         try:
             self._policy.spend(usage)
         except Exception as exc:
-            self._emit(step, "policy", f"spend failed: {exc}")
+            self._fault(step, "policy", f"spend failed: {exc}")
 
     def _context_budget(self, usage: Usage) -> int:
         limit = self._limit_tokens()
         remaining = limit - usage.tokens
         return max(self._min_context, min(remaining, limit))
+
+    def _fault(self, step: int, source: str, message: str) -> None:
+        """Handled failure: record it and shout about it, never swallow silently."""
+        self._faults.append(Fault(step=step, source=source, message=message))
+        self._emit(step, "fault", f"{source}: {message}")
+
+    def _result(self, answer: str, usage: Usage, reason: str) -> RunResult:
+        return RunResult(
+            answer=answer,
+            steps=usage.steps,
+            usage=usage,
+            stopped_reason=reason,
+            faults=tuple(self._faults),
+        )
 
     def _emit(self, step: int, kind: str, text: str) -> None:
         if self._on_event is None:

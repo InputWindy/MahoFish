@@ -212,6 +212,7 @@ def run_failure_cases() -> None:
     )
     print(f"[llm-error] stop={result.stopped_reason}")
     assert result.stopped_reason.startswith("llm error"), result.stopped_reason
+    assert any(f.source == "llm" for f in result.faults), result.faults
 
     result = _run(
         FlakyLLM(['{"thought":"x","final":"retry ok"}'], fail_times=1),
@@ -232,6 +233,7 @@ def run_failure_cases() -> None:
     )
     print(f"[tool-crash] answer={result.answer!r}")
     assert result.answer == "工具崩了但我还能继续", result.answer
+    assert any(f.source == "tool" for f in result.faults), result.faults
 
     result = _run(
         ScriptedLLM(
