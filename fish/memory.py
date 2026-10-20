@@ -1,57 +1,90 @@
-"""Sliding-window memory: keeps recent turns verbatim, folds older ones into
-a one-line ledger. No summarisation call yet - that is a strategy upgrade
-behind the same ``Memory`` contract.
+"""Sliding-window memory with an explicit compaction step.
+
+RECENT turns stay verbatim; older ones are folded by ``compact()`` using an
+injected summarizer, so this module never imports an LLM. FACTS are handled by
+``fish/store.py`` (see docs/contracts.md C8/C9).
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from typing import Any, Sequence
 
-from .contracts import Memory, Message, Role, Turn, estimate_tokens
+from .contracts import Memory, Message, Role, Summarizer, Turn, estimate_tokens
+
+
+@dataclass(frozen=True)
+class MemoryConfig:
+    keep_turns: int = 8
+    observation_chars: int = 1500
+    summary_ratio: float = 0.25
+    max_turns: int = 200
 
 
 class WindowMemory(Memory):
     def __init__(
         self,
         goal: str,
-        keep_turns: int = 8,
-        observation_chars: int = 1500,
+        config: MemoryConfig | None = None,
+        scope: str | None = None,
     ) -> None:
         self._goal = goal
-        self._keep = max(1, keep_turns)
-        self._obs_chars = max(200, observation_chars)
+        self._config = config or MemoryConfig()
+        self._scope = scope
         self._turns: list[Turn] = []
+        self._summary: str = ""
+        self._folded = 0
+        self._folded_tools: Counter[str] = Counter()
 
     @property
     def goal(self) -> str:
         return self._goal
 
+    @property
+    def scope(self) -> str | None:
+        return self._scope
+
+    @property
+    def folded(self) -> int:
+        return self._folded
+
     def add(self, turn: Turn) -> None:
         self._turns.append(turn)
+        while len(self._turns) > self._config.max_turns:
+            self._evict(self._turns.pop(0))
 
-    def reset(self) -> None:
-        self._turns.clear()
+    def compact(self, summarizer: Summarizer) -> int:
+        keep = max(1, self._config.keep_turns)
+        if len(self._turns) <= keep:
+            return 0
+        older = self._turns[: len(self._turns) - keep]
+        text = summarizer(older).strip()
+        if text:
+            self._summary = f"{self._summary}\n{text}".strip() if self._summary else text
+        for turn in older:
+            self._evict(turn)
+        del self._turns[: len(older)]
+        return len(older)
 
     def view(self, budget_tokens: int) -> list[Message]:
         budget_chars = max(2000, budget_tokens * 3)
-        recent = self._turns[-self._keep :]
-        older = self._turns[: len(self._turns) - len(recent)]
-
-        blocks: list[str] = []
-        used = estimate_tokens(self._goal) * 3
-        for turn in reversed(recent):
-            block = self._render_turn(turn)
-            size = len(block)
-            if used + size > budget_chars and blocks:
-                break
-            blocks.append(block)
-            used += size
-        blocks.reverse()
+        summary_budget = int(budget_chars * self._config.summary_ratio)
 
         parts = [f"GOAL: {self._goal}"]
-        if older:
-            parts.append(f"EARLIER STEPS (folded): {self._ledger(older)}")
+        head = self._render_summary(summary_budget)
+        if head:
+            parts.append(head)
+
+        blocks: list[str] = []
+        used = sum(len(p) for p in parts)
+        for turn in reversed(self._turns):
+            block = self._render_turn(turn)
+            if used + len(block) > budget_chars and blocks:
+                break
+            blocks.append(block)
+            used += len(block)
+        blocks.reverse()
         if blocks:
             parts.append("ACTIONS SO FAR:\n\n" + "\n\n".join(blocks))
         else:
@@ -59,7 +92,33 @@ class WindowMemory(Memory):
         parts.append("Your next reply (one JSON object):")
         return [Message(role=Role.USER, content="\n\n".join(parts))]
 
+    def reset(self) -> None:
+        self._turns.clear()
+        self._summary = ""
+        self._folded = 0
+        self._folded_tools.clear()
+
+    def context_tokens(self, budget_tokens: int) -> int:
+        return estimate_tokens(self.view(budget_tokens)[0].content)
+
     # -- internals ----------------------------------------------------------
+
+    def _evict(self, turn: Turn) -> None:
+        self._folded += 1
+        action = turn.decision.action if turn.decision else None
+        if action is not None:
+            self._folded_tools[action.tool] += 1
+
+    def _render_summary(self, limit: int) -> str:
+        if self._summary:
+            text = self._summary
+            if len(text) > limit:
+                text = text[-limit:]
+            return f"EARLIER STEPS (summarized):\n{text}"
+        if self._folded:
+            tools = ", ".join(f"{n}x{c}" for n, c in self._folded_tools.items()) or "-"
+            return f"EARLIER STEPS (folded): {self._folded} steps, tools used: {tools}"
+        return ""
 
     def _render_turn(self, turn: Turn) -> str:
         decision = turn.decision
@@ -75,18 +134,10 @@ class WindowMemory(Memory):
         if obs is None:
             return head
         body = obs.content
-        if len(body) > self._obs_chars:
-            body = body[: self._obs_chars] + "...[truncated]"
+        limit = self._config.observation_chars
+        if len(body) > limit:
+            body = body[:limit] + "...[truncated]"
         return f"{head}\nresult:\n{body}"
-
-    @staticmethod
-    def _ledger(turns: Sequence[Turn]) -> str:
-        names: Counter[str] = Counter()
-        for turn in turns:
-            if turn.decision and turn.decision.action:
-                names[turn.decision.action.tool] += 1
-        used = ", ".join(f"{name}x{count}" for name, count in names.items()) or "none"
-        return f"{len(turns)} steps, tools used: {used}"
 
 
 def _compact(value: Any) -> str:

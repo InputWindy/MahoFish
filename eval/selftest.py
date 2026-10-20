@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fish.agent import Agent
 from fish.contracts import (
+    Action,
+    Decision,
     LLMBackend,
     Message,
     Observation,
@@ -20,8 +22,9 @@ from fish.contracts import (
     ToolContext,
     ToolRegistry,
     ToolSpec,
+    Turn,
 )
-from fish.memory import WindowMemory
+from fish.memory import MemoryConfig, WindowMemory
 from fish.policy import StaticPolicy
 
 
@@ -77,7 +80,10 @@ class FakeRegistry(ToolRegistry):
 def run_case(name: str, replies: list[str], *, max_steps: int = 6) -> str:
     LookupTool.calls = 0
     llm = ScriptedLLM(replies)
-    memory = WindowMemory(goal="读取页面标题", keep_turns=2, observation_chars=200)
+    memory = WindowMemory(
+        goal="读取页面标题",
+        config=MemoryConfig(keep_turns=2, observation_chars=200),
+    )
     policy = StaticPolicy(max_steps=max_steps, max_tokens=50_000)
     events: list[tuple[int, str, str]] = []
     agent = Agent(llm, FakeRegistry(), memory, policy, on_event=lambda *a: events.append(a))
@@ -85,6 +91,33 @@ def run_case(name: str, replies: list[str], *, max_steps: int = 6) -> str:
     print(f"[{name}] stop={result.stopped_reason} steps={result.steps}")
     print(f"[{name}] answer={result.answer!r}")
     return result.answer
+
+
+def run_compact_case() -> None:
+    memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
+    for step in range(1, 8):
+        memory.add(
+            Turn(
+                step=step,
+                decision=Decision(thought="t", action=Action("lookup", {"i": step})),
+                observation=Observation.success(f"result {step}"),
+            )
+        )
+    seen: list[int] = []
+
+    def fake_summarizer(turns: list[Turn]) -> str:
+        seen.append(len(turns))
+        return "SUMMARY-BODY: read 4 pages, titles found, ads skipped"
+
+    folded = memory.compact(fake_summarizer)
+    text = memory.view(4000)[0].content
+    print(f"[compact] folded={folded} summarizer_input={seen} chars={len(text)}")
+
+    assert folded == 4, folded
+    assert seen == [4], seen
+    assert "EARLIER STEPS (summarized)" in text, text
+    assert "SUMMARY-BODY" in text, text
+    assert memory.compact(fake_summarizer) == 0, "nothing left to fold"
 
 
 def main() -> int:
@@ -132,6 +165,8 @@ def main() -> int:
     )
     assert answer == "不再重复", answer
     assert LookupTool.calls == 1, f"tool ran {LookupTool.calls} times, expected 1"
+
+    run_compact_case()
 
     print("\nall cases passed")
     return 0

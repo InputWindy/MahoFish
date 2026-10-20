@@ -8,18 +8,28 @@ Example:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 from fish.agent import Agent
 from fish.llm import LLMError, build_llm
 from fish.memory import WindowMemory
 from fish.policy import StaticPolicy
+from fish.summarize import make_summarizer
 from fish.tools import MCPToolRegistry, build_chrome_client
 
 DEFAULT_GOAL = (
     "打开 https://www.bilibili.com ，读取首页推荐视频列表，"
     "输出前 5 个视频的标题、UP 主、播放量，并一句话总结今天首页的推荐倾向。"
 )
+
+_URL = re.compile(r"https?://([^/\s]+)")
+
+
+def _goal_scope(goal: str) -> str | None:
+    """First host mentioned in the goal, used as the facts scope."""
+    match = _URL.search(goal)
+    return match.group(1).lower() if match else None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -86,13 +96,20 @@ def main(argv: list[str] | None = None) -> int:
                 max_tokens=args.max_tokens,
                 deadline_seconds=args.timeout,
             )
-            memory = WindowMemory(goal=args.goal)
+            memory = WindowMemory(goal=args.goal, scope=_goal_scope(args.goal))
             on_event = None
             if not args.quiet:
                 def on_event(step: int, kind: str, text: str) -> None:
                     print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
 
-            agent = Agent(llm, registry, memory, policy, on_event=on_event)
+            agent = Agent(
+                llm,
+                registry,
+                memory,
+                policy,
+                on_event=on_event,
+                summarizer=make_summarizer(llm),
+            )
             result = agent.run()
     finally:
         close = getattr(llm, "close", None)

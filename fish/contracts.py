@@ -14,7 +14,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 
 class Role(str, Enum):
@@ -117,6 +117,10 @@ class Turn:
     observation: Observation | None
 
 
+# Injected by the loop so Memory never depends on an LLM implementation.
+Summarizer = Callable[[Sequence[Turn]], str]
+
+
 @dataclass(frozen=True)
 class Verdict:
     allowed: bool
@@ -186,7 +190,11 @@ class Memory(ABC):
 
     @abstractmethod
     def view(self, budget_tokens: int) -> list[Message]:
-        """Compressed conversation for the next LLM call."""
+        """Compressed conversation for the next LLM call. Must be pure."""
+
+    @abstractmethod
+    def compact(self, summarizer: Summarizer) -> int:
+        """Fold old turns into the rolling summary; return how many folded."""
 
     @abstractmethod
     def reset(self) -> None:

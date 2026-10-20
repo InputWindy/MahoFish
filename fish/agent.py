@@ -16,6 +16,7 @@ from .contracts import (
     PROTOCOL_HINT,
     Role,
     RunResult,
+    Summarizer,
     ToolContext,
     ToolRegistry,
     Turn,
@@ -53,6 +54,7 @@ class Agent:
         memory: Memory,
         policy: Policy,
         on_event: EventHook | None = None,
+        summarizer: Summarizer | None = None,
         min_context_tokens: int = 2000,
     ) -> None:
         self._llm = llm
@@ -60,6 +62,7 @@ class Agent:
         self._memory = memory
         self._policy = policy
         self._on_event = on_event
+        self._summarizer = summarizer
         self._min_context = min_context_tokens
 
     def run(self) -> RunResult:
@@ -83,6 +86,14 @@ class Agent:
                 )
 
             step += 1
+            if self._summarizer is not None:
+                try:
+                    folded = self._memory.compact(self._summarizer)
+                except Exception as exc:  # compaction must never break the run
+                    folded = 0
+                    self._emit(step, "compact", f"failed: {exc}")
+                if folded:
+                    self._emit(step, "compact", f"folded {folded} turns")
             budget = self._context_budget(usage)
             messages: Sequence[Message] = [
                 Message(role=Role.SYSTEM, content=system),

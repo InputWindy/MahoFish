@@ -82,12 +82,13 @@
 
 | 项 | 内容 |
 |---|---|
-| 定义 | `view(budget_tokens: int) -> list[Message]` |
+| 定义 | `view(budget_tokens: int) -> list[Message]`；`compact(summarizer: Summarizer) -> int`（返回折叠轮数） |
 | 组装顺序 | `FACTS`（≤15% 预算，永不裁剪） → `SUMMARY`（≤25%） → `RECENT TURNS`（剩余） |
-| 规则 | ① 只返回 `Message`；② **Memory 不直接依赖 LLM**，摘要走注入的 `Summarizer` 回调；③ 预算不足时先从 recent 尾部砍 |
+| 规则 | ① 只返回 `Message`；② **view 必须是纯函数**（不发网络请求、不调模型）；③ 压缩由循环显式调用 `compact()` 触发，`Summarizer` 以回调注入，`Memory` 不 import LLM；④ 预算不足时先从 recent 尾部砍 |
+| scope | facts 检索所需的域在**构造时注入**（每个任务一个 Memory 实例），不通过 `view` 参数传入 |
 | 允许扩展 | 换压缩策略（滑窗/滚动摘要/检索）不改接口；新增 fact 检索维度不改接口 |
-| 禁止 | 返回非 Message；在 view 里发网络请求；把权限/预算判断塞进 memory |
-| 实现状态 | `WindowMemory` 已实现 RECENT + 折叠台账；FACTS / SUMMARY 两块待实现（协议先冻结） |
+| 禁止 | 返回非 Message；在 view 里发网络请求；把权限/预算判断塞进 memory；在 add 里压缩 |
+| 实现状态 | `WindowMemory` 已实现 RECENT + 折叠台账 + `compact()`；FACTS 待实现（协议先冻结） |
 
 ### C9 · Fact（持久化汇点）
 
@@ -122,9 +123,9 @@
 | 项 | 内容 |
 |---|---|
 | 定义 | `Agent.run() -> RunResult`，循环只依赖 C1–C11 |
-| 规则 | 终止条件只来自 `Policy.exhausted()` 与 `final`；重复调用拦截在循环（`tool+args` 与上一步相同则不执行） |
+| 规则 | 终止条件只来自 `Policy.exhausted()` 与 `final`；重复调用拦截在循环（`tool+args` 与上一步相同则不执行）；每步允许调用 `memory.compact(summarizer)` 触发折叠，摘要逻辑本身不得写在循环里 |
 | 允许扩展 | 换范式（Plan-Execute / Reflexion）= 新循环实现，接口不变 |
-| 禁止 | 循环内 import 具体工具/registry/后端；循环内调 LLM 做摘要；循环内写盘 |
+| 禁止 | 循环内 import 具体工具/registry/后端；循环内实现摘要逻辑；循环内写盘 |
 
 ### C13 · 配置（外部输入汇点）
 
