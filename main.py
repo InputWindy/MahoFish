@@ -18,7 +18,7 @@ from fish.memory import WindowMemory
 from fish.policy import StaticPolicy
 from fish.store import JsonFactStore
 from fish.summarize import make_summarizer
-from fish.tools import MCPToolRegistry, build_chrome_client
+from fish.tools import EmptyRegistry, MCPToolRegistry, build_chrome_client
 
 DEFAULT_GOAL = (
     "打开 https://www.bilibili.com ，读取首页推荐视频列表，"
@@ -32,6 +32,21 @@ def _goal_scope(goal: str) -> str | None:
     """First host mentioned in the goal, used as the facts scope."""
     match = _URL.search(goal)
     return match.group(1).lower() if match else None
+
+
+BROWSER_HINTS = """\
+- `evaluate_script` is the cheapest way to read page content: pass a JS arrow
+  function, e.g. {"function": "() => document.title"}.
+- Prefer reading the DOM over screenshots.
+"""
+
+
+def _build_domain(args: argparse.Namespace) -> tuple[object, str, object]:
+    """Assemble the domain pack: (registry, prompt hints, closable resource)."""
+    if args.domain == "browser":
+        client = build_chrome_client(headless=args.headless)
+        return MCPToolRegistry(client), BROWSER_HINTS, client
+    return EmptyRegistry(), "", None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -61,6 +76,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="allow mutating tools (click/fill)",
     )
     parser.add_argument(
+        "--domain",
+        choices=["none", "browser"],
+        default="none",
+        help="none = core only (no tools); browser = Chrome DevTools MCP",
+    )
+    parser.add_argument(
         "--headless", action="store_true", help="run Chrome without a visible window"
     )
     parser.add_argument("--quiet", action="store_true", help="hide step trace")
@@ -79,45 +100,45 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"[fish] backend={llm.name} model={llm.model} goal={args.goal}", flush=True)
+    client = None
     try:
-        with build_chrome_client(headless=args.headless) as client:
-            registry = MCPToolRegistry(client)
-            specs = registry.specs()
-            print(f"[fish] tools={[s.name for s in specs]}", flush=True)
-            if not specs:
-                print(
-                    "[fish] chrome-devtools-mcp exposed no usable tools",
-                    file=sys.stderr,
-                )
-                return 3
+        registry, hints, client = _build_domain(args)
+        specs = registry.specs()
+        print(f"[fish] domain={args.domain} tools={[s.name for s in specs]}", flush=True)
+        if args.domain == "browser" and not specs:
+            print("[fish] browser domain exposed no usable tools", file=sys.stderr)
+            return 3
 
-            policy = StaticPolicy(
-                allow={s.name for s in specs},
-                allow_dangerous=args.allow_dangerous,
-                max_steps=args.max_steps,
-                max_tokens=args.max_tokens,
-                deadline_seconds=args.timeout,
-            )
-            memory = WindowMemory(
-                goal=args.goal,
-                scope=_goal_scope(args.goal),
-                facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
-            )
-            on_event = None
-            if not args.quiet:
-                def on_event(step: int, kind: str, text: str) -> None:
-                    print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
+        policy = StaticPolicy(
+            allow={s.name for s in specs},
+            allow_dangerous=args.allow_dangerous,
+            max_steps=args.max_steps,
+            max_tokens=args.max_tokens,
+            deadline_seconds=args.timeout,
+        )
+        memory = WindowMemory(
+            goal=args.goal,
+            scope=_goal_scope(args.goal),
+            facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
+        )
+        on_event = None
+        if not args.quiet:
+            def on_event(step: int, kind: str, text: str) -> None:
+                print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
 
-            agent = Agent(
-                llm,
-                registry,
-                memory,
-                policy,
-                on_event=on_event,
-                summarizer=make_summarizer(llm),
-            )
-            result = agent.run()
+        agent = Agent(
+            llm,
+            registry,
+            memory,
+            policy,
+            on_event=on_event,
+            summarizer=make_summarizer(llm),
+            hints=hints,
+        )
+        result = agent.run()
     finally:
+        if client is not None:
+            client.close()
         close = getattr(llm, "close", None)
         if callable(close):
             close()

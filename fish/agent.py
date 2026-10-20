@@ -19,14 +19,15 @@ from .contracts import (
     Summarizer,
     ToolContext,
     ToolRegistry,
+    ToolSpec,
     Turn,
     Usage,
     parse_decision,
 )
 
 SYSTEM_PROMPT = """\
-You are a browser automation agent. You cannot see the screen; the only things
-you know about a page are what tools return to you.
+You are an autonomous agent. You cannot see anything directly; the only things
+you know come from tool results and your memory of them.
 
 {protocol}
 
@@ -35,13 +36,18 @@ Available tools:
 
 Rules:
 - One tool per reply.
-- `evaluate_script` is the cheapest way to read page content: pass a JS arrow
-  function, e.g. {{"function": "() => document.title"}}.
-- Prefer reading the DOM over screenshots.
+- Only call tools from the list above; never invent a tool name.
 - If a tool returns an error, change the call instead of repeating it.
-- If the data you already have satisfies the goal, answer with "final" right
-  away. Do not keep refining extraction for cosmetic reasons.
-"""
+- If the information you already have satisfies the goal, answer with "final"
+  right away. Do not keep refining for cosmetic reasons.
+- If no tools are available, answer directly with "final".
+{domain_hints}"""
+
+
+def _render_tools(specs: Sequence[ToolSpec]) -> str:
+    if not specs:
+        return "(none)"
+    return "\n".join(spec.render() for spec in specs)
 
 EventHook = Callable[[int, str, str], None]
 
@@ -55,6 +61,7 @@ class Agent:
         policy: Policy,
         on_event: EventHook | None = None,
         summarizer: Summarizer | None = None,
+        hints: str = "",
         min_context_tokens: int = 2000,
     ) -> None:
         self._llm = llm
@@ -63,12 +70,14 @@ class Agent:
         self._policy = policy
         self._on_event = on_event
         self._summarizer = summarizer
+        self._hints = hints
         self._min_context = min_context_tokens
 
     def run(self) -> RunResult:
         system = SYSTEM_PROMPT.format(
             protocol=PROTOCOL_HINT,
-            tools="\n".join(spec.render() for spec in self._tools.specs()),
+            tools=_render_tools(self._tools.specs()),
+            domain_hints=self._hints,
         )
         started = time.monotonic()
         usage = Usage()

@@ -95,6 +95,27 @@ def run_case(name: str, replies: list[str], *, max_steps: int = 6) -> str:
     return result.answer
 
 
+class NoToolsRegistry(ToolRegistry):
+    """Domain-free core: the loop must still close."""
+
+    def specs(self) -> list[ToolSpec]:
+        return []
+
+    def get(self, name: str) -> Tool | None:
+        return None
+
+
+def run_no_tools_case() -> None:
+    llm = ScriptedLLM(['{"thought":"no tools","final":"直接回答：42"}'])
+    memory = WindowMemory(goal="告诉我答案")
+    policy = StaticPolicy(max_steps=3, max_tokens=10_000)
+    result = Agent(llm, NoToolsRegistry(), memory, policy).run()
+    print(f"[no-tools] stop={result.stopped_reason} steps={result.steps}")
+    assert result.answer == "直接回答：42", result.answer
+    assert result.stopped_reason == "final", result.stopped_reason
+    assert result.steps == 1, result.steps
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -211,6 +232,7 @@ def main() -> int:
     assert answer == "不再重复", answer
     assert LookupTool.calls == 1, f"tool ran {LookupTool.calls} times, expected 1"
 
+    run_no_tools_case()
     run_compact_case()
     run_store_case()
 

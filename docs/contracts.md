@@ -124,7 +124,8 @@
 |---|---|
 | 定义 | `Agent.run() -> RunResult`，循环只依赖 C1–C11 |
 | 规则 | 终止条件只来自 `Policy.exhausted()` 与 `final`；重复调用拦截在循环（`tool+args` 与上一步相同则不执行）；每步允许调用 `memory.compact(summarizer)` 触发折叠，摘要逻辑本身不得写在循环里 |
-| 允许扩展 | 换范式（Plan-Execute / Reflexion）= 新循环实现，接口不变 |
+| 允许扩展 | 换范式（Plan-Execute / Reflexion）= 新循环实现，接口不变；可注入 `observer: TurnObserver`，每轮写入后回调 |
+| observer 约束 | core 只调用 `observer.on_turn(turn)`，不得读取 turn 内容做判断；observer 异常必须吞掉，不得影响循环结果 |
 | 禁止 | 循环内 import 具体工具/registry/后端；循环内实现摘要逻辑；循环内写盘 |
 
 ### C13 · 配置（外部输入汇点）
@@ -142,6 +143,16 @@
 | 定义 | 运行时数据统一在 `.fish/`（`facts.json`、后续 `sessions/`、`logs/`），已 gitignore |
 | 规则 | 原子写（临时文件 + `os.replace`）；读失败降级为空，不阻塞主流程 |
 | 禁止 | 往仓库其他目录写运行时数据；把 `.fish/` 提交进版本库 |
+
+### C15 · 域插件（Domain Pack）
+
+| 项 | 内容 |
+|---|---|
+| 定义 | 按领域封装的扩展模块，放 `fish/domains/<domain>.py`；实现 `TurnObserver` 或提供该域专用工具 |
+| 规则 | ① core **不得 import** 任何 `fish.domains.*`；② 由组合根（`main.py`）装配并注入；③ 插件失败必须降级，不得中断任务 |
+| 允许扩展 | 新增域（browser / desktop / im）、同域多插件（不同抽取策略） |
+| 禁止 | 在插件里改循环行为、改协议、绕过 Policy；把域知识（站点名、选择器规则）写进 core |
+| 演进闸门 | 只有"同一份逻辑需要在 2 个以上域复用"时，才允许把插件内的逻辑提升为通用模块 |
 
 ---
 

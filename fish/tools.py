@@ -114,6 +114,16 @@ class MCPToolRegistry(ToolRegistry):
         return self._page_id
 
 
+class EmptyRegistry(ToolRegistry):
+    """Domain-free core: no tools, loop only produces final answers."""
+
+    def specs(self) -> list[ToolSpec]:
+        return []
+
+    def get(self, name: str) -> Tool | None:
+        return None
+
+
 def build_chrome_client(
     node_command: list[str] | None = None,
     headless: bool = False,
