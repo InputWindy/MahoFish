@@ -78,11 +78,18 @@ def load(name: str, **options: Any) -> DomainPack:
     factory = _factory(name)
     try:
         pack = factory(**_accepted_options(factory, options))
-    except TypeError as exc:
-        raise DomainError(f"domain {name!r}: bad options: {exc}") from exc
+    except DomainError:
+        raise
+    except Exception as exc:  # launch failures, missing binaries, ...
+        raise DomainError(f"domain {name!r}: assembly failed: {exc}") from exc
     if not isinstance(pack, DomainPack):
         raise DomainError(f"domain {name!r} did not return a DomainPack")
-    validate(pack)
+    try:
+        validate(pack)
+    except DomainError:
+        raise
+    except Exception as exc:
+        raise DomainError(f"domain {name!r}: validation crashed: {exc}") from exc
     return pack
 
 

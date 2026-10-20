@@ -92,7 +92,7 @@ class Agent:
     def run(self) -> RunResult:
         system = SYSTEM_PROMPT.format(
             protocol=PROTOCOL_HINT,
-            tools=_render_tools(self._tools.specs()),
+            tools=_render_tools(self._safe_specs()),
             domain_hints=self._hints,
         )
         started = time.monotonic()
@@ -246,9 +246,9 @@ class Agent:
         assert action is not None
         self._emit(step, "tool", f"{action.tool} {action.args}")
 
-        tool = self._tools.get(action.tool)
+        tool = self._safe_get(action.tool)
         if tool is None:
-            available = [spec.name for spec in self._tools.specs()]
+            available = [spec.name for spec in self._safe_specs()]
             observation = Observation.failure(
                 f"unknown tool {action.tool!r}; available: {available}"
             )
@@ -271,6 +271,26 @@ class Agent:
         self._emit(step, "result", preview)
         return observation
 
+    def _safe_specs(self) -> list[ToolSpec]:
+        try:
+            return list(self._tools.specs())
+        except Exception as exc:  # a broken registry degrades to "no tools"
+            self._emit(0, "registry", f"specs failed: {exc}")
+            return []
+
+    def _safe_get(self, name: str):
+        try:
+            return self._tools.get(name)
+        except Exception as exc:
+            self._emit(0, "registry", f"get({name!r}) failed: {exc}")
+            return None
+
+    def _limit_tokens(self) -> int:
+        try:
+            return int(self._policy.max_tokens)
+        except Exception:
+            return 200_000
+
     def _spend(self, usage: Usage, step: int) -> None:
         try:
             self._policy.spend(usage)
@@ -278,12 +298,17 @@ class Agent:
             self._emit(step, "policy", f"spend failed: {exc}")
 
     def _context_budget(self, usage: Usage) -> int:
-        remaining = self._policy.max_tokens - usage.tokens
-        return max(self._min_context, min(remaining, self._policy.max_tokens))
+        limit = self._limit_tokens()
+        remaining = limit - usage.tokens
+        return max(self._min_context, min(remaining, limit))
 
     def _emit(self, step: int, kind: str, text: str) -> None:
-        if self._on_event is not None:
+        if self._on_event is None:
+            return
+        try:
             self._on_event(step, kind, text)
+        except Exception:
+            pass  # logging must never break the run
 
 
 _WS = re.compile(r"\s+")

@@ -275,6 +275,43 @@ def run_failure_cases() -> None:
     assert "token budget" in result.stopped_reason, result.stopped_reason
 
 
+class BoomRegistry2(ToolRegistry):
+    def specs(self) -> list[ToolSpec]:
+        raise RuntimeError("registry boom")
+
+    def get(self, name: str) -> Tool | None:
+        raise RuntimeError("registry boom")
+
+
+class BoomBudgetPolicy(StaticPolicy):
+    @property
+    def max_tokens(self) -> int:
+        raise RuntimeError("budget boom")
+
+
+def run_last_resort_cases() -> None:
+    result = _run(
+        ScriptedLLM(['{"thought":"x","final":"注册表崩了也能继续"}']),
+        registry=BoomRegistry2(),
+    )
+    print(f"[registry-crash] answer={result.answer!r}")
+    assert result.answer == "注册表崩了也能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(['{"thought":"x","final":"预算崩了也能继续"}']),
+        policy=BoomBudgetPolicy(max_steps=6),
+    )
+    print(f"[budget-crash] answer={result.answer!r}")
+    assert result.answer == "预算崩了也能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(['{"thought":"x","final":"日志崩了也能继续"}']),
+        on_event=lambda *args: (_ for _ in ()).throw(RuntimeError("log boom")),
+    )
+    print(f"[event-crash] answer={result.answer!r}")
+    assert result.answer == "日志崩了也能继续", result.answer
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -394,6 +431,7 @@ def main() -> int:
     run_domain_case()
     run_no_tools_case()
     run_failure_cases()
+    run_last_resort_cases()
     run_compact_case()
     run_store_case()
 
