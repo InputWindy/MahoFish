@@ -64,5 +64,26 @@ vcpkg_installed/
 *.dwo
 
 # test output & cache
+
 Testing/
+
 .cache/
+
+# Python
+
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+
+node_modules/
+
+# local secrets & scratch
+
+.env
+.env.*
+*.tmp
+

@@ -1,0 +1,12 @@
+{
+  "name": "maho-fish",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal LLM-driven browser agent (MCP + Chrome DevTools)",
+  "scripts": {
+    "check": "npx -y chrome-devtools-mcp@1.11.0 --version"
+  },
+  "devDependencies": {
+    "chrome-devtools-mcp": "1.11.0"
+  }
+}
