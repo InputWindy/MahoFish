@@ -32,6 +32,7 @@ from .contracts import (
     TurnObserver,
     Usage,
     Verdict,
+    estimate_tokens,
     parse_decision,
 )
 
@@ -59,7 +60,13 @@ EventHook = Callable[[int, str, str], None]
 def _render_tools(specs: Sequence[ToolSpec]) -> str:
     if not specs:
         return "(none)"
-    return "\n".join(spec.render() for spec in specs)
+    lines: list[str] = []
+    for spec in specs:
+        try:
+            lines.append(spec.render())
+        except Exception as exc:  # malformed spec must not kill startup
+            lines.append(f"- {getattr(spec, 'name', '?')}: (unrenderable: {exc})")
+    return "\n".join(lines)
 
 
 class Agent:
@@ -139,18 +146,22 @@ class Agent:
                     stopped_reason=reason,
                 )
 
+            text = reply.text if isinstance(reply.text, str) else str(reply.text or "")
+            reply_tokens = (
+                reply.tokens if isinstance(reply.tokens, int) else estimate_tokens(text)
+            )
+            estimated = reply_tokens if getattr(reply, "source", "estimate") == "estimate" else 0
             usage = Usage(
                 steps=usage.steps + 1,
-                tokens=usage.tokens + reply.tokens,
+                tokens=usage.tokens + reply_tokens,
                 seconds=time.monotonic() - started,
-                estimated_tokens=usage.estimated_tokens
-                + (reply.tokens if reply.source == "estimate" else 0),
+                estimated_tokens=usage.estimated_tokens + estimated,
             )
             self._spend(usage, step)
 
-            decision = parse_decision(reply.text)
+            decision = parse_decision(text)
             if decision is None:
-                self._emit(step, "model", f"unparsable reply: {reply.text[:300]!r}")
+                self._emit(step, "model", f"unparsable reply: {text[:300]!r}")
                 self._remember(
                     step,
                     None,
@@ -264,6 +275,11 @@ class Agent:
                     observation = tool.run(action.args, ToolContext(step=step))
                 except Exception as exc:
                     observation = Observation.failure(f"tool crashed: {exc}")
+                if not isinstance(observation, Observation):
+                    observation = Observation.failure(
+                        f"tool {action.tool!r} returned {type(observation).__name__}, "
+                        "expected Observation"
+                    )
 
         preview = observation.content
         if len(preview) > 1200:

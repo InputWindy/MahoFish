@@ -312,6 +312,55 @@ def run_last_resort_cases() -> None:
     assert result.answer == "日志崩了也能继续", result.answer
 
 
+class BadSpecRegistry(ToolRegistry):
+    def specs(self) -> list[ToolSpec]:
+        return [ToolSpec(name="bad", description="", parameters=None)]
+
+    def get(self, name: str) -> Tool | None:
+        return None
+
+
+class NonObservationTool(Tool):
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(name="oops", description="Returns the wrong type.")
+
+    def run(self, args: dict, ctx: ToolContext):  # type: ignore[override]
+        return "not an observation"
+
+
+class NonObservationRegistry(ToolRegistry):
+    def __init__(self) -> None:
+        self._tool = NonObservationTool()
+
+    def specs(self) -> list[ToolSpec]:
+        return [self._tool.spec]
+
+    def get(self, name: str) -> Tool | None:
+        return self._tool if name == "oops" else None
+
+
+def run_contract_violation_cases() -> None:
+    result = _run(
+        ScriptedLLM(['{"thought":"x","final":"坏描述也能继续"}']),
+        registry=BadSpecRegistry(),
+    )
+    print(f"[bad-spec] answer={result.answer!r}")
+    assert result.answer == "坏描述也能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(
+            [
+                '{"thought":"call","tool":"oops","args":{}}',
+                '{"thought":"done","final":"工具返错类型也能继续"}',
+            ]
+        ),
+        registry=NonObservationRegistry(),
+    )
+    print(f"[bad-observation] answer={result.answer!r}")
+    assert result.answer == "工具返错类型也能继续", result.answer
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -432,6 +481,7 @@ def main() -> int:
     run_no_tools_case()
     run_failure_cases()
     run_last_resort_cases()
+    run_contract_violation_cases()
     run_compact_case()
     run_store_case()
 

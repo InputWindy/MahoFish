@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fish import domain
 from fish.agent import Agent
-from fish.llm import LLMError, build_llm
+from fish.llm import build_llm
 from fish.memory import WindowMemory
 from fish.policy import StaticPolicy
 from fish.store import JsonFactStore
@@ -23,6 +23,16 @@ DEFAULT_GOAL = (
     "打开 https://www.bilibili.com ，读取首页推荐视频列表，"
     "输出前 5 个视频的标题、UP 主、播放量，并一句话总结今天首页的推荐倾向。"
 )
+
+
+def _safe_call(fn, *args, default=None):
+    """Composition-root boundary: a broken domain must not crash the app."""
+    try:
+        return fn(*args)
+    except Exception as exc:
+        name = getattr(fn, "__name__", "call")
+        print(f"[domain] {name} failed: {exc}", file=sys.stderr)
+        return default
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -77,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         llm = build_llm(args.backend, args.model)
-    except LLMError as exc:
+    except Exception as exc:
         print(f"[llm] {exc}", file=sys.stderr)
         return 2
 
@@ -90,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[domain] {exc}", file=sys.stderr)
             return 2
         registry = pack.registry()
-        specs = registry.specs()
+        specs = _safe_call(registry.specs, default=[])
         print(
             f"[fish] domain={pack.name} tools={[s.name for s in specs]}", flush=True
         )
@@ -104,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         memory = WindowMemory(
             goal=args.goal,
-            scope=pack.scope_for(args.goal),
+            scope=_safe_call(pack.scope_for, args.goal, default=None),
             facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
         )
         on_event = None
@@ -119,13 +129,13 @@ def main(argv: list[str] | None = None) -> int:
             policy,
             on_event=on_event,
             summarizer=make_summarizer(llm),
-            hints=pack.hints(),
+            hints=_safe_call(pack.hints, default=""),
             max_llm_retries=args.max_retries,
         )
         result = agent.run()
     finally:
         if pack is not None:
-            pack.close()
+            _safe_call(pack.close, default=None)
         close = getattr(llm, "close", None)
         if callable(close):
             close()
