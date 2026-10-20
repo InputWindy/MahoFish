@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Callable, Sequence
 
@@ -37,6 +38,8 @@ Rules:
   function, e.g. {{"function": "() => document.title"}}.
 - Prefer reading the DOM over screenshots.
 - If a tool returns an error, change the call instead of repeating it.
+- If the data you already have satisfies the goal, answer with "final" right
+  away. Do not keep refining extraction for cosmetic reasons.
 """
 
 EventHook = Callable[[int, str, str], None]
@@ -67,6 +70,7 @@ class Agent:
         started = time.monotonic()
         usage = Usage()
         step = 0
+        last_signature: str | None = None
 
         while True:
             stopped, reason = self._policy.exhausted()
@@ -119,11 +123,19 @@ class Agent:
                     stopped_reason="final",
                 )
 
-            observation = self._execute(step, decision)
+            signature = _signature(decision)
+            if signature == last_signature:
+                observation = Observation.failure(
+                    "you repeated the exact same call; it will return the same "
+                    "result. Change the call or reply with 'final'."
+                )
+                self._emit(step, "repeat", observation.content)
+            else:
+                observation = self._execute(step, decision)
+                last_signature = signature
             self._memory.add(
                 Turn(step=step, decision=decision, observation=observation)
             )
-
     # -- internals ----------------------------------------------------------
 
     def _execute(self, step: int, decision: Decision) -> Observation:
@@ -157,3 +169,10 @@ class Agent:
     def _emit(self, step: int, kind: str, text: str) -> None:
         if self._on_event is not None:
             self._on_event(step, kind, text)
+
+
+def _signature(decision: Decision) -> str:
+    action = decision.action
+    if action is None:
+        return ""
+    return json.dumps([action.tool, action.args], sort_keys=True, ensure_ascii=False)

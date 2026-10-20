@@ -40,7 +40,8 @@ main.py ──▶ agent.py ──▶ contracts ◀── llm.py / tools.py / mem
 2. **预算只在 Policy**。循环每步 `policy.spend(usage)`，退出条件只问 `policy.exhausted()`。
 3. **记忆只认 `Turn` / `Message`**。`Memory.view()` 返回给 LLM 的消息，不含工具清单、不含 prompt 模板。
 4. **元数据驱动策略**。`dangerous` / `idempotent` 是 `ToolSpec` 的字段，拦截逻辑写在 `Policy.check()`，不写在循环里。
-5. **协议改动必须同步三处**：`contracts.PROTOCOL_HINT`、`contracts.parse_decision()`、`eval/selftest.py` 的用例。
+5. **循环负责兜底收敛**。重复调用（`tool + args` 与上一步相同）不执行，回 `Observation.failure` 逼模型换路；连续同工具多步无进展时注入收敛提示。这是循环职责，不要下沉到工具或策略。
+6. **协议改动必须同步三处**：`contracts.PROTOCOL_HINT`、`contracts.parse_decision()`、`eval/selftest.py` 的用例。
 
 ## 想加能力时，改哪里
 

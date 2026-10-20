@@ -39,6 +39,8 @@ class ScriptedLLM(LLMBackend):
 
 
 class LookupTool(Tool):
+    calls = 0
+
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -48,6 +50,7 @@ class LookupTool(Tool):
         )
 
     def run(self, args: dict, ctx: ToolContext) -> Observation:
+        LookupTool.calls += 1
         return Observation.success('["标题A", "标题B", "标题C"]')
 
 
@@ -72,6 +75,7 @@ class FakeRegistry(ToolRegistry):
 
 
 def run_case(name: str, replies: list[str], *, max_steps: int = 6) -> str:
+    LookupTool.calls = 0
     llm = ScriptedLLM(replies)
     memory = WindowMemory(goal="读取页面标题", keep_turns=2, observation_chars=200)
     policy = StaticPolicy(max_steps=max_steps, max_tokens=50_000)
@@ -117,6 +121,17 @@ def main() -> int:
         max_steps=2,
     )
     assert "Stopped" in answer, answer
+
+    answer = run_case(
+        "repeat-guard",
+        [
+            '{"thought":"read","tool":"lookup","args":{"query":"x"}}',
+            '{"thought":"read again","tool":"lookup","args":{"query":"x"}}',
+            '{"thought":"done","final":"不再重复"}',
+        ],
+    )
+    assert answer == "不再重复", answer
+    assert LookupTool.calls == 1, f"tool ran {LookupTool.calls} times, expected 1"
 
     print("\nall cases passed")
     return 0
