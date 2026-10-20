@@ -1,0 +1,85 @@
+{
+  "backend": "deepseek",
+  "tasks": [
+    {
+      "id": "arith",
+      "passed": true,
+      "steps": 1,
+      "tokens": 273,
+      "faults": 0,
+      "seconds": 0.9,
+      "note": "final",
+      "answer": "391"
+    },
+    {
+      "id": "json_only",
+      "passed": true,
+      "steps": 1,
+      "tokens": 276,
+      "faults": 0,
+      "seconds": 0.8,
+      "note": "final",
+      "answer": "{\"ok\": true}"
+    },
+    {
+      "id": "explain_loop",
+      "passed": true,
+      "steps": 1,
+      "tokens": 296,
+      "faults": 0,
+      "seconds": 0.8,
+      "note": "final",
+      "answer": "Agent 循环是指智能体反复执行“观察环境→思考决策→采取行动→获取反馈”这一过程，直到任务完成或达到终止条件。"
+    },
+    {
+      "id": "no_tools_direct",
+      "passed": true,
+      "steps": 1,
+      "tokens": 281,
+      "faults": 0,
+      "seconds": 0.7,
+      "note": "final",
+      "answer": "1 + 1 等于 2。"
+    },
+    {
+      "id": "page_title",
+      "passed": true,
+      "steps": 2,
+      "tokens": 1351,
+      "faults": 0,
+      "seconds": 5.9,
+      "note": "final",
+      "answer": "页面标题是：Example Domain"
+    },
+    {
+      "id": "example_links",
+      "passed": true,
+      "steps": 3,
+      "tokens": 2123,
+      "faults": 0,
+      "seconds": 7.5,
+      "note": "final",
+      "answer": "1"
+    },
+    {
+      "id": "bili_top5",
+      "passed": true,
+      "steps": 6,
+      "tokens": 6897,
+      "faults": 0,
+      "seconds": 12.7,
+      "note": "final",
+      "answer": "B站首页推荐前5个视频：\n1. 逃离城市，白天鞣制鹿皮夜晚炖肉汤躲进石头安全屋取暖，开始迎接漫长而寒冷野外生活 —— 120.6万\n2. 矿井内1600米下起血雨，人类历史最严重电梯灾难 —— 7.8万\n3. 新王将至，旧王永垂不朽 ︳【侠盗猎车手V】终极鉴赏2026 (Leya蕾雅) ︳GTAV —— 128.3万\n4. 挑战给路人发意义不明海报！！！ —— 96.6万\n5. 阿根廷《 烧 烤 大 王 》用百年围院做个牛排烤肉店！店长日记 —— 9.7万"
+    },
+    {
+      "id": "bili_ads",
+      "passed": true,
+      "steps": 3,
+      "tokens": 2493,
+      "faults": 0,
+      "seconds": 8.2,
+      "note": "final",
+      "answer": "有。首页存在广告卡片，证据：页面文本中出现“广告\nAI工具一键搞定视频，再也不用熬夜剪辑了\n1万人感兴趣”，其中包含“人感兴趣”字样，且标注为“广告”。"
+    }
+  ]
+}

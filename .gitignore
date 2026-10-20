@@ -91,4 +91,5 @@ node_modules/
 # runtime state (docs/contracts.md C14)
 
 .fish/
+eval/results/latest.json
 

@@ -58,6 +58,11 @@ python main.py --backend codemaker  # 等价写法
 
 实测开销（单次运行）：服务冷启动 ~2.3s（只一次，不按对话算）；建/删 session ~0.05s；单次补全 1–2.5s（短 prompt）。端到端 4 步约 19s，大头是模型推理和页面上下文，不是 CLI 初始化。
 
+**限制**：codemaker 自带系统提示会描述它自己的环境（UE/MCP 工具），即使我们禁用全部工具并声明"以下清单为准"，模型仍会偶发地回答"没有浏览器工具"。因此：
+
+- `--domain none`（纯推理）→ codemaker 可用
+- 带工具的域（如 `browser`）→ 请用 `--backend deepseek`
+
 ### deepseek（发布版）
 
 任何 OpenAI 兼容的 `/chat/completions`，默认指向 DeepSeek。
@@ -122,13 +127,17 @@ Agent = ⟨LLM, Tools, Memory⟩ × Loop(+Policy)
 | `fish/domain.py` | 域扩展协议：`DomainPack` / 能力声明 / 装配与校验 |
 | `fish/domains/browser.py` | 浏览器域：Chrome MCP 工具 + 提示 + URL scope |
 | `fish/domains/core.py` | 无域核心：零工具，只能直接作答 |
-| `eval/selftest.py` | 离线自测：FakeLLM/FakeTool 驱动循环，不用网络 |
+| `eval/selftest.py` | 离线自测：21 个机制用例，不用网络 |
 | `eval/domain_check.py` | 域合规检查：能力声明、工具描述、close 幂等 |
+| `eval/tasks.json` | 回归任务定义（目标 + 判分规则 + 预算） |
+| `eval/run_tasks.py` | 回归 runner：批量跑、出表、与 `results/baseline.json` 对比 |
 
 纯标准库，没有 pip 依赖。
 
 ```bash
-python eval/selftest.py   # 离线跑：正常路径、策略拦截、坏 JSON、预算耗尽
+python eval/selftest.py      # 离线跑：21 个机制用例，不用网络
+python eval/domain_check.py  # 域合规检查
+python eval/run_tasks.py     # 8 条任务回归集，规则判分 + 基线对比
 ```
 
 ## 开发用 skill
@@ -140,6 +149,30 @@ python eval/selftest.py   # 离线跑：正常路径、策略拦截、坏 JSON�
 | `agent-contracts` | 改 `fish/*.py`、`main.py`、`eval/` | 五契约边界、禁止的依赖方向、改能力时该动哪个文件 |
 | `agent-tool-design` | 新增/修改工具 | 工具粒度、描述写法、`dangerous/idempotent` 标注、错误文案 |
 | `agent-eval` | 验证改动 | Fake → 真工具 → 真模型 三层验证顺序与必备用例 |
+
+## 回归集
+
+`eval/tasks.json` 定义固定任务，`eval/run_tasks.py` 批量跑并与 `eval/results/baseline.json` 对比（基线进版本库，`latest.json` 忽略）。
+
+```json
+{
+  "id": "page_title",
+  "domain": "browser",
+  "domain_options": {"headless": true},
+  "goal": "打开 https://example.com ，输出页面标题。",
+  "checks": [{"type": "contains", "value": "Example Domain"}],
+  "budget": {"max_steps": 4, "max_seconds": 120}
+}
+```
+
+判分类型：`contains` / `regex` / `equals` / `min_items`（按 pattern 计数）/ `not_contains`。
+
+```bash
+python eval/run_tasks.py                          # 全部，deepseek
+python eval/run_tasks.py --only bili_top5          # 单条
+python eval/run_tasks.py --backend codemaker       # 仅适合 domain=none 的任务
+python eval/run_tasks.py --save-baseline           # 更新基线
+```
 
 ## 汇点与设计约束
 

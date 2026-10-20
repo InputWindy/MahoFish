@@ -36,6 +36,7 @@ python main.py        真模型 + 真 Chrome      验端到端，最贵，最少
 
 ```bash
 python eval/selftest.py     # 全绿才算过
+python eval/run_tasks.py    # 改动能力/记忆/工具后必跑，对比 baseline
 ```
 
 ## 第二层：真实工具链路
@@ -89,6 +90,7 @@ b=build_llm('codemaker'); print(b.complete([Message(Role.USER,'回复 OK')]).tex
 - `.env` 里的值不会覆盖已存在的真实环境变量，排查"改了没生效"先查 `set FISH_API_KEY`
 - 代理/防火墙会表现为 `cannot reach ...: timed out`，与 HTTP 401（key 错）要分清
 - `codemaker` 后端单步 10–20 秒，端到端预算要按步数 × 20s 估；忘了 `close()` 会留下 serve 进程
+- 带工具的域不要用 `codemaker` 后端：它自带的系统提示会描述自己的环境，模型会偶发地回答"没有浏览器工具"（实测 8 条任务里偶发 1 条）。回归集默认走 `deepseek`
 - 不要再用 `codemaker run`：每次起新进程 + 完整 agent 外壳，实测 600s 超时
 
 ## 交付前清单
