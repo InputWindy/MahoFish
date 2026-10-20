@@ -178,7 +178,7 @@ class CodemakerServerLLM(LLMBackend):
     ) -> None:
         load_dotenv()
         self._url = (url or _first_env("FISH_CODEMAKER_URL") or "").rstrip("/")
-        self._model = model or _first_env("FISH_MODEL", "CODEMAKER_MODEL")
+        self._model = model or _first_env("CODEMAKER_MODEL")
         self._timeout = timeout
         self._ready_timeout = ready_timeout
         self._proc: subprocess.Popen[bytes] | None = None
@@ -324,7 +324,7 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def build_llm(backend: str = "deepseek", model: str | None = None) -> LLMBackend:
+def build_llm(backend: str = "codemaker", model: str | None = None) -> LLMBackend:
     if backend == "codemaker":
         return CodemakerServerLLM(model=model)
     if backend == "deepseek":

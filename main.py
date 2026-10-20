@@ -1,4 +1,4 @@
-"""Entry point: let an LLM drive a real Chrome and report what it finds.
+﻿"""Entry point: let an LLM drive a real Chrome and report what it finds.
 
 Example:
     python main.py
@@ -29,9 +29,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--goal", default=DEFAULT_GOAL, help="what the agent should do")
     parser.add_argument(
         "--backend",
-        choices=["deepseek", "codemaker"],
-        default="deepseek",
-        help="deepseek = release; codemaker = local cli for development",
+        choices=["codemaker", "deepseek"],
+        default="codemaker",
+        help="codemaker = local cli for development (default); deepseek = release",
     )
     parser.add_argument(
         "--model",
