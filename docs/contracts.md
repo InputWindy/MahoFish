@@ -98,7 +98,7 @@
 | 规则 | ① `id = f"{scope}:{kind}:{key}"`，天然去重；② 只存**可复用可验证**的事实（选择器、字段映射、站点特性），不存一次性数据；③ 淘汰靠 `score` 反馈，**不用 LLM 决策 ADD/UPDATE/DELETE** |
 | 允许扩展 | 加 `ttl`、`source_task`、向量检索字段（不改现有字段语义） |
 | 禁止 | 存视频标题/正文等一次性内容；在 store 里调模型；把 facts 写进 Turn |
-| 实现状态 | 未实现（协议先冻结，按 §6 推进） |
+| 实现状态 | v0 已实现：`fish/store.py` 的 `Fact` + `JsonFactStore`；自动抽取与 `remember_fact` 工具待做（§6 第 3 步） |
 
 ### C10 · Policy（边界汇点）
 

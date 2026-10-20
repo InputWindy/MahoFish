@@ -10,11 +10,13 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from pathlib import Path
 
 from fish.agent import Agent
 from fish.llm import LLMError, build_llm
 from fish.memory import WindowMemory
 from fish.policy import StaticPolicy
+from fish.store import JsonFactStore
 from fish.summarize import make_summarizer
 from fish.tools import MCPToolRegistry, build_chrome_client
 
@@ -96,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
                 max_tokens=args.max_tokens,
                 deadline_seconds=args.timeout,
             )
-            memory = WindowMemory(goal=args.goal, scope=_goal_scope(args.goal))
+            memory = WindowMemory(
+                goal=args.goal,
+                scope=_goal_scope(args.goal),
+                facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
+            )
             on_event = None
             if not args.quiet:
                 def on_event(step: int, kind: str, text: str) -> None:

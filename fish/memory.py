@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from .contracts import Memory, Message, Role, Summarizer, Turn, estimate_tokens
+from .store import Fact, FactStore
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,8 @@ class MemoryConfig:
     keep_turns: int = 8
     observation_chars: int = 1500
     summary_ratio: float = 0.25
+    facts_ratio: float = 0.15
+    facts_limit: int = 8
     max_turns: int = 200
 
 
@@ -28,10 +31,12 @@ class WindowMemory(Memory):
         goal: str,
         config: MemoryConfig | None = None,
         scope: str | None = None,
+        facts: FactStore | None = None,
     ) -> None:
         self._goal = goal
         self._config = config or MemoryConfig()
         self._scope = scope
+        self._facts = facts
         self._turns: list[Turn] = []
         self._summary: str = ""
         self._folded = 0
@@ -69,9 +74,13 @@ class WindowMemory(Memory):
 
     def view(self, budget_tokens: int) -> list[Message]:
         budget_chars = max(2000, budget_tokens * 3)
+        facts_budget = int(budget_chars * self._config.facts_ratio)
         summary_budget = int(budget_chars * self._config.summary_ratio)
 
         parts = [f"GOAL: {self._goal}"]
+        facts_block = self._render_facts(facts_budget)
+        if facts_block:
+            parts.append(facts_block)
         head = self._render_summary(summary_budget)
         if head:
             parts.append(head)
@@ -108,6 +117,28 @@ class WindowMemory(Memory):
         action = turn.decision.action if turn.decision else None
         if action is not None:
             self._folded_tools[action.tool] += 1
+
+    def _render_facts(self, limit: int) -> str:
+        if self._facts is None or not self._scope:
+            return ""
+        try:
+            facts: list[Fact] = self._facts.query(
+                self._scope, limit=self._config.facts_limit
+            )
+        except Exception:
+            return ""  # facts are an accelerator, never a blocker
+        if not facts:
+            return ""
+        header = f"KNOWN FACTS for {self._scope}:"
+        lines = [header]
+        used = len(header)
+        for fact in facts:
+            line = f"- {fact.text}"
+            if used + len(line) > limit and len(lines) > 1:
+                break
+            lines.append(line)
+            used += len(line)
+        return "\n".join(lines)
 
     def _render_summary(self, limit: int) -> str:
         if self._summary:
