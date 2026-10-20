@@ -28,6 +28,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--goal", default=DEFAULT_GOAL, help="what the agent should do")
     parser.add_argument(
+        "--backend",
+        choices=["deepseek", "codemaker"],
+        default="deepseek",
+        help="deepseek = release; codemaker = local cli for development",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help="override FISH_MODEL (default: deepseek-chat)",
@@ -55,35 +61,43 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:
-        llm = build_llm(args.model)
+        llm = build_llm(args.backend, args.model)
     except LLMError as exc:
         print(f"[llm] {exc}", file=sys.stderr)
         return 2
 
     print(f"[fish] backend={llm.name} model={llm.model} goal={args.goal}", flush=True)
-    with build_chrome_client(headless=args.headless) as client:
-        registry = MCPToolRegistry(client)
-        specs = registry.specs()
-        print(f"[fish] tools={[s.name for s in specs]}", flush=True)
-        if not specs:
-            print("[fish] chrome-devtools-mcp exposed no usable tools", file=sys.stderr)
-            return 3
+    try:
+        with build_chrome_client(headless=args.headless) as client:
+            registry = MCPToolRegistry(client)
+            specs = registry.specs()
+            print(f"[fish] tools={[s.name for s in specs]}", flush=True)
+            if not specs:
+                print(
+                    "[fish] chrome-devtools-mcp exposed no usable tools",
+                    file=sys.stderr,
+                )
+                return 3
 
-        policy = StaticPolicy(
-            allow={s.name for s in specs},
-            allow_dangerous=args.allow_dangerous,
-            max_steps=args.max_steps,
-            max_tokens=args.max_tokens,
-            deadline_seconds=args.timeout,
-        )
-        memory = WindowMemory(goal=args.goal)
-        on_event = None
-        if not args.quiet:
-            def on_event(step: int, kind: str, text: str) -> None:
-                print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
+            policy = StaticPolicy(
+                allow={s.name for s in specs},
+                allow_dangerous=args.allow_dangerous,
+                max_steps=args.max_steps,
+                max_tokens=args.max_tokens,
+                deadline_seconds=args.timeout,
+            )
+            memory = WindowMemory(goal=args.goal)
+            on_event = None
+            if not args.quiet:
+                def on_event(step: int, kind: str, text: str) -> None:
+                    print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
 
-        agent = Agent(llm, registry, memory, policy, on_event=on_event)
-        result = agent.run()
+            agent = Agent(llm, registry, memory, policy, on_event=on_event)
+            result = agent.run()
+    finally:
+        close = getattr(llm, "close", None)
+        if callable(close):
+            close()
 
     print("\n=== RESULT ===")
     print(result.answer)

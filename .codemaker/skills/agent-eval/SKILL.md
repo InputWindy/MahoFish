@@ -76,14 +76,20 @@ python main.py --headless --max-steps 4 --timeout 600 --quiet
 ```bash
 # 只验后端，不碰浏览器
 python -c "from fish.llm import build_llm; from fish.contracts import Message, Role; \
-print(build_llm().complete([Message(Role.USER, '回复 OK')]))"
+print(build_llm('deepseek').complete([Message(Role.USER, '回复 OK')]))"
+
+# 开发后端：自动起 codemaker serve，验完记得 close
+python -c "from fish.llm import build_llm; from fish.contracts import Message, Role; \
+b=build_llm('codemaker'); print(b.complete([Message(Role.USER,'回复 OK')]).text); b.close()"
 ```
 
 已知坑：
 
-- 缺 key 时 `build_llm()` 直接抛 `LLMError`，不会静默走到浏览器
+- 缺 key 时 `build_llm('deepseek')` 直接抛 `LLMError`，不会静默走到浏览器
 - `.env` 里的值不会覆盖已存在的真实环境变量，排查"改了没生效"先查 `set FISH_API_KEY`
 - 代理/防火墙会表现为 `cannot reach ...: timed out`，与 HTTP 401（key 错）要分清
+- `codemaker` 后端单步 10–20 秒，端到端预算要按步数 × 20s 估；忘了 `close()` 会留下 serve 进程
+- 不要再用 `codemaker run`：每次起新进程 + 完整 agent 外壳，实测 600s 超时
 
 ## 交付前清单
 

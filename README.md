@@ -36,7 +36,16 @@ python main.py --headless --goal "打开 https://www.bilibili.com ，总结首�
 
 ## LLM 配置
 
-后端只有一个：任何 OpenAI 兼容的 `/chat/completions`，默认指向 DeepSeek。
+两个后端，按部署阶段分工：
+
+| `--backend` | 用途 | 依赖 |
+|---|---|---|
+| `deepseek`（默认） | 发布版 | API key（`FISH_API_KEY`） |
+| `codemaker` | 本地开发/自测 | 本机 `codemaker` CLI 登录态，零 key |
+
+### deepseek（发布版）
+
+任何 OpenAI 兼容的 `/chat/completions`，默认指向 DeepSeek。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -54,11 +63,26 @@ FISH_MODEL=qwen2.5:14b
 FISH_API_KEY=ollama          # 本地服务随便填
 ```
 
+### codemaker（开发版）
+
+```bash
+python main.py --backend codemaker
+```
+
+- 自动在空闲端口起 `codemaker serve`，工作目录是临时目录，跑完即关闭
+- 每次补全新建 session、用完删除，保证无状态
+- 显式关闭它自带的 `bash/read/write/edit` 等工具，只当纯模型用
+- 已有服务时设 `FISH_CODEMAKER_URL=http://127.0.0.1:4123`，不再自启
+- `--model provider/modelID` 指定模型，不填用服务端默认
+
+单步约 10–20 秒（DeepSeek 约 2 秒），只用于本地迭代，不要拿去发布。
+
 ## 参数
 
 | 参数 | 说明 |
 |---|---|
 | `--goal` | 给 agent 的任务 |
+| `--backend` | `deepseek`（发布）/ `codemaker`（开发） |
 | `--model` | 覆盖 `FISH_MODEL` |
 | `--max-steps` | 步数预算，默认 12 |
 | `--max-tokens` | token 预算，默认 200000 |
