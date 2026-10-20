@@ -5,6 +5,8 @@ description: 修改 MahoFish（fish/*.py、main.py、eval/）的 agent 循环、
 
 # Agent 五契约
 
+> 改任何汇点前，先看 `docs/contracts.md`：14 个汇点的允许扩展、禁止事项、演进闸门都在那里。没有闸门里写的现实触发条件，不许动协议。
+
 ## 唯一真源
 
 `fish/contracts.py` 是全部协议、数据类、决策解析的唯一来源。任何模块**只允许**依赖它，不允许依赖别的实现模块。

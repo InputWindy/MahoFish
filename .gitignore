@@ -88,3 +88,7 @@ node_modules/
 !.env.example
 *.tmp
 
+# runtime state (docs/contracts.md C14)
+
+.fish/
+

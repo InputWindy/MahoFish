@@ -136,6 +136,12 @@ python eval/selftest.py   # 离线跑：正常路径、策略拦截、坏 JSON�
 | `agent-tool-design` | 新增/修改工具 | 工具粒度、描述写法、`dangerous/idempotent` 标注、错误文案 |
 | `agent-eval` | 验证改动 | Fake → 真工具 → 真模型 三层验证顺序与必备用例 |
 
+## 汇点与设计约束
+
+[`docs/contracts.md`](docs/contracts.md) 冻结了全部 14 个数据汇点（Message / Reply / Decision / Observation / ToolSpec / ToolRegistry / Turn / Memory.view / Fact / Policy / Usage / 循环 / 配置 / 落盘），每个汇点写明：允许的扩展方式、禁止事项、以及**演进闸门**（什么条件下才允许改协议）。
+
+改代码前先在那里找落点：找不到落点或触碰禁止项，才走 §4 的契约变更流程。
+
 ## 已知限制
 
 - 模型看不到图：需要视觉时得换多模态后端，`take_screenshot` 目前只返回占位文本
