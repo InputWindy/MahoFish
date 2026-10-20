@@ -160,8 +160,12 @@ class DeepSeekClient(LLMBackend):
             raise LLMError(f"unexpected response: {str(body)[:800]}")
         content = str(choices[0].get("message", {}).get("content") or "").strip()
         usage = body.get("usage") or {}
-        tokens = int(usage.get("total_tokens") or 0) or estimate_tokens(content)
-        return Reply(text=content, tokens=tokens)
+        reported = int(usage.get("total_tokens") or 0)
+        return Reply(
+            text=content,
+            tokens=reported or estimate_tokens(content),
+            source="api" if reported else "estimate",
+        )
 
 
 class CodemakerServerLLM(LLMBackend):
@@ -250,7 +254,7 @@ class CodemakerServerLLM(LLMBackend):
             text = self._send(session_id, prompt)
         finally:
             self._delete_session(session_id)
-        return Reply(text=text, tokens=estimate_tokens(prompt + text))
+        return Reply(text=text, tokens=estimate_tokens(prompt + text), source="estimate")
 
     def _create_session(self) -> str:
         try:

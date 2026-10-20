@@ -42,6 +42,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="override FISH_MODEL (default: deepseek-chat)",
     )
     parser.add_argument("--max-steps", type=int, default=12, help="step budget")
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="retries per LLM call before the run stops with 'llm error'",
+    )
     parser.add_argument("--max-tokens", type=int, default=200_000, help="token budget")
     parser.add_argument(
         "--timeout", type=float, default=1800.0, help="wall-clock budget in seconds"
@@ -114,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             on_event=on_event,
             summarizer=make_summarizer(llm),
             hints=pack.hints(),
+            max_llm_retries=args.max_retries,
         )
         result = agent.run()
     finally:
@@ -127,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     print(result.answer)
     print(
         f"\n[stats] steps={result.steps} tokens={result.usage.tokens} "
+        f"(estimated={result.usage.estimated_tokens}) "
         f"seconds={result.usage.seconds:.1f} stop={result.stopped_reason}"
     )
     return 0 if result.stopped_reason == "final" else 1

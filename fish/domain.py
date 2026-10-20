@@ -14,6 +14,7 @@ Domains are assembled by the composition root (``main.py``). Nothing in
 from __future__ import annotations
 
 import importlib
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from importlib.metadata import entry_points
@@ -76,7 +77,7 @@ def available() -> list[str]:
 def load(name: str, **options: Any) -> DomainPack:
     factory = _factory(name)
     try:
-        pack = factory(**options)
+        pack = factory(**_accepted_options(factory, options))
     except TypeError as exc:
         raise DomainError(f"domain {name!r}: bad options: {exc}") from exc
     if not isinstance(pack, DomainPack):
@@ -111,6 +112,24 @@ def validate(pack: DomainPack) -> None:
 
     if caps.hints and not isinstance(pack.hints(), str):
         raise DomainError(f"domain {pack.name!r}: hints() must return str")
+
+
+def _accepted_options(factory: Any, options: dict[str, Any]) -> dict[str, Any]:
+    """Pass only what the factory can accept, so domains stay decoupled."""
+    try:
+        signature = inspect.signature(factory)
+    except (TypeError, ValueError):
+        return {}
+    params = signature.parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return dict(options)
+    names = {
+        p.name
+        for p in params
+        if p.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    return {key: value for key, value in options.items() if key in names}
 
 
 def _factory(name: str) -> DomainFactory:

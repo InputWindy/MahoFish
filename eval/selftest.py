@@ -153,6 +153,128 @@ def run_no_tools_case() -> None:
     assert result.steps == 1, result.steps
 
 
+class FlakyLLM(ScriptedLLM):
+    def __init__(self, replies: list[str], fail_times: int = 1) -> None:
+        super().__init__(replies)
+        self._fail = fail_times
+
+    def complete(self, messages: list[Message]) -> Reply:
+        if self._fail:
+            self._fail -= 1
+            raise RuntimeError("simulated network failure")
+        return super().complete(messages)
+
+
+class BoomTool(Tool):
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(name="boom", description="Always raises.")
+
+    def run(self, args: dict, ctx: ToolContext) -> Observation:
+        raise RuntimeError("tool exploded")
+
+
+class BoomRegistry(ToolRegistry):
+    def __init__(self) -> None:
+        self._tool = BoomTool()
+
+    def specs(self) -> list[ToolSpec]:
+        return [self._tool.spec]
+
+    def get(self, name: str) -> Tool | None:
+        return self._tool if name == "boom" else None
+
+
+class BoomPolicy(StaticPolicy):
+    def check(self, spec: ToolSpec, args: dict):
+        raise RuntimeError("policy exploded")
+
+
+class BoomMemory(WindowMemory):
+    def view(self, budget_tokens: int) -> list[Message]:
+        raise RuntimeError("memory exploded")
+
+
+def _run(llm, registry=None, memory=None, policy=None, **kwargs):
+    return Agent(
+        llm,
+        registry or FakeRegistry(),
+        memory or WindowMemory(goal="g"),
+        policy or StaticPolicy(max_steps=6, max_tokens=50_000),
+        **kwargs,
+    ).run()
+
+
+def run_failure_cases() -> None:
+    result = _run(
+        FlakyLLM(['{"thought":"x","final":"never"}'], fail_times=99),
+        max_llm_retries=0,
+    )
+    print(f"[llm-error] stop={result.stopped_reason}")
+    assert result.stopped_reason.startswith("llm error"), result.stopped_reason
+
+    result = _run(
+        FlakyLLM(['{"thought":"x","final":"retry ok"}'], fail_times=1),
+        max_llm_retries=2,
+        retry_backoff=0,
+    )
+    print(f"[llm-retry] answer={result.answer!r} steps={result.steps}")
+    assert result.answer == "retry ok", result.answer
+
+    result = _run(
+        ScriptedLLM(
+            [
+                '{"thought":"call","tool":"boom","args":{}}',
+                '{"thought":"fallback","final":"工具崩了但我还能继续"}',
+            ]
+        ),
+        registry=BoomRegistry(),
+    )
+    print(f"[tool-crash] answer={result.answer!r}")
+    assert result.answer == "工具崩了但我还能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(
+            [
+                '{"thought":"call","tool":"lookup","args":{}}',
+                '{"thought":"done","final":"策略崩了也能继续"}',
+            ]
+        ),
+        policy=BoomPolicy(max_steps=6),
+    )
+    print(f"[policy-crash] answer={result.answer!r}")
+    assert result.answer == "策略崩了也能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(['{"thought":"x","final":"记忆崩了也能继续"}']),
+        memory=BoomMemory(goal="g"),
+    )
+    print(f"[memory-crash] answer={result.answer!r}")
+    assert result.answer == "记忆崩了也能继续", result.answer
+
+    memory = WindowMemory(goal="g", config=MemoryConfig(keep_turns=1))
+    result = _run(
+        ScriptedLLM(
+            [
+                '{"thought":"a","tool":"lookup","args":{"q":"1"}}',
+                '{"thought":"b","tool":"lookup","args":{"q":"2"}}',
+                '{"thought":"done","final":"摘要崩了也能继续"}',
+            ]
+        ),
+        memory=memory,
+        summarizer=lambda turns: (_ for _ in ()).throw(RuntimeError("summary boom")),
+    )
+    print(f"[summarizer-crash] answer={result.answer!r}")
+    assert result.answer == "摘要崩了也能继续", result.answer
+
+    result = _run(
+        ScriptedLLM(['{"thought":"a","tool":"lookup","args":{"q":"1"}}']),
+        policy=StaticPolicy(max_steps=10, max_tokens=150),
+    )
+    print(f"[token-budget] stop={result.stopped_reason}")
+    assert "token budget" in result.stopped_reason, result.stopped_reason
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -171,13 +293,13 @@ def run_compact_case() -> None:
 
     folded = memory.compact(fake_summarizer)
     text = memory.view(4000)[0].content
-    print(f"[compact] folded={folded} summarizer_input={seen} chars={len(text)}")
+    print(f"[compact] folded={folded.folded} summarizer_input={seen} chars={len(text)}")
 
-    assert folded == 4, folded
+    assert folded.folded == 4, folded
     assert seen == [4], seen
     assert "EARLIER STEPS (summarized)" in text, text
     assert "SUMMARY-BODY" in text, text
-    assert memory.compact(fake_summarizer) == 0, "nothing left to fold"
+    assert memory.compact(fake_summarizer).folded == 0, "nothing left to fold"
 
 
 def run_store_case() -> None:
@@ -271,6 +393,7 @@ def main() -> int:
 
     run_domain_case()
     run_no_tools_case()
+    run_failure_cases()
     run_compact_case()
     run_store_case()
 

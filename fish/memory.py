@@ -11,7 +11,16 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from .contracts import Memory, Message, Role, Summarizer, Turn, estimate_tokens
+from .contracts import (
+    CompactionResult,
+    Memory,
+    Message,
+    Role,
+    Summarizer,
+    Summary,
+    Turn,
+    estimate_tokens,
+)
 from .store import Fact, FactStore
 
 
@@ -59,18 +68,22 @@ class WindowMemory(Memory):
         while len(self._turns) > self._config.max_turns:
             self._evict(self._turns.pop(0))
 
-    def compact(self, summarizer: Summarizer) -> int:
+    def compact(self, summarizer: Summarizer) -> CompactionResult:
         keep = max(1, self._config.keep_turns)
         if len(self._turns) <= keep:
-            return 0
+            return CompactionResult()
         older = self._turns[: len(self._turns) - keep]
-        text = summarizer(older).strip()
+        produced = summarizer(older)
+        if isinstance(produced, Summary):
+            text, tokens = produced.text.strip(), produced.tokens
+        else:
+            text, tokens = str(produced).strip(), 0
         if text:
             self._summary = f"{self._summary}\n{text}".strip() if self._summary else text
         for turn in older:
             self._evict(turn)
         del self._turns[: len(older)]
-        return len(older)
+        return CompactionResult(folded=len(older), tokens=tokens)
 
     def view(self, budget_tokens: int) -> list[Message]:
         budget_chars = max(2000, budget_tokens * 3)

@@ -92,6 +92,21 @@ class Observation:
 class Reply:
     text: str
     tokens: int = 0
+    source: str = "api"  # "api" when the provider reported usage, else "estimate"
+
+
+@dataclass(frozen=True)
+class Summary:
+    """Produced by a Summarizer; tokens makes compaction cost measurable."""
+
+    text: str
+    tokens: int = 0
+
+
+@dataclass(frozen=True)
+class CompactionResult:
+    folded: int = 0
+    tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -99,12 +114,14 @@ class Usage:
     steps: int = 0
     tokens: int = 0
     seconds: float = 0.0
+    estimated_tokens: int = 0
 
     def plus(self, other: "Usage") -> "Usage":
         return Usage(
             self.steps + other.steps,
             self.tokens + other.tokens,
             self.seconds + other.seconds,
+            self.estimated_tokens + other.estimated_tokens,
         )
 
 
@@ -118,7 +135,8 @@ class Turn:
 
 
 # Injected by the loop so Memory never depends on an LLM implementation.
-Summarizer = Callable[[Sequence[Turn]], str]
+# A Summarizer may return plain text (tokens then default to 0) or a Summary.
+Summarizer = Callable[[Sequence[Turn]], "str | Summary"]
 
 
 @dataclass(frozen=True)
@@ -201,8 +219,8 @@ class Memory(ABC):
         """Compressed conversation for the next LLM call. Must be pure."""
 
     @abstractmethod
-    def compact(self, summarizer: Summarizer) -> int:
-        """Fold old turns into the rolling summary; return how many folded."""
+    def compact(self, summarizer: Summarizer) -> CompactionResult:
+        """Fold old turns into the rolling summary."""
 
     @abstractmethod
     def reset(self) -> None:

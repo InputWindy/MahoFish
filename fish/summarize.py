@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from .contracts import LLMBackend, Message, Role, Summarizer, Turn
+from .contracts import LLMBackend, Message, Role, Summarizer, Summary, Turn
 
 PROMPT = """\
 Compress the agent's past steps into at most 3 short lines for its own future
@@ -36,7 +36,7 @@ def render_turns(turns: Sequence[Turn]) -> str:
 
 
 def make_summarizer(llm: LLMBackend) -> Summarizer:
-    def summarize(turns: Sequence[Turn]) -> str:
+    def summarize(turns: Sequence[Turn]) -> str | Summary:
         steps = render_turns(turns)
         if not steps:
             return ""
@@ -44,6 +44,6 @@ def make_summarizer(llm: LLMBackend) -> Summarizer:
             reply = llm.complete([Message(Role.USER, PROMPT.format(steps=steps))])
         except Exception:
             return ""  # degrade to the folded-steps ledger, never break the run
-        return reply.text.strip()
+        return Summary(text=reply.text.strip(), tokens=reply.tokens)
 
     return summarize

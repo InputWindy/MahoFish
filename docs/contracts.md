@@ -82,7 +82,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 定义 | `view(budget_tokens: int) -> list[Message]`；`compact(summarizer: Summarizer) -> int`（返回折叠轮数） |
+| 定义 | `view(budget_tokens: int) -> list[Message]`；`compact(summarizer: Summarizer) -> CompactionResult(folded, tokens)` |
 | 组装顺序 | `FACTS`（≤15% 预算，永不裁剪） → `SUMMARY`（≤25%） → `RECENT TURNS`（剩余） |
 | 规则 | ① 只返回 `Message`；② **view 必须是纯函数**（不发网络请求、不调模型）；③ 压缩由循环显式调用 `compact()` 触发，`Summarizer` 以回调注入，`Memory` 不 import LLM；④ 预算不足时先从 recent 尾部砍 |
 | scope | facts 检索所需的域在**构造时注入**（每个任务一个 Memory 实例），不通过 `view` 参数传入 |
@@ -114,7 +114,8 @@
 | 项 | 内容 |
 |---|---|
 | 定义 | `Usage(steps, tokens, seconds)`；`RunResult(answer, steps, usage, stopped_reason)` |
-| 规则 | `stopped_reason` 必须是稳定枚举：`final`、`step budget exhausted`、`token budget exhausted`、`time budget exhausted`。日志/评测按字符串前缀匹配 |
+| 规则 | `stopped_reason` 必须是稳定枚举：`final`、`step budget exhausted`、`token budget exhausted`、`time budget exhausted`、`llm error: <detail>`、`policy error: <detail>`。日志/评测按字符串前缀匹配 |
+| 失败来源 | `Usage.estimated_tokens` 记录由估算（非 provider 上报）计入的 token，用于判断预算数字的可信度 |
 | 允许扩展 | 加 `cost`、`trace_id`、`facts_used` |
 | 禁止 | 自由文本 reason；在 RunResult 里塞对话历史 |
 
@@ -123,7 +124,8 @@
 | 项 | 内容 |
 |---|---|
 | 定义 | `Agent.run() -> RunResult`，循环只依赖 C1–C11 |
-| 规则 | 终止条件只来自 `Policy.exhausted()` 与 `final`；重复调用拦截在循环（`tool+args` 与上一步相同则不执行）；每步允许调用 `memory.compact(summarizer)` 触发折叠，摘要逻辑本身不得写在循环里 |
+| 规则 | 终止条件只来自 `Policy.exhausted()` 与 `final`（首轮检查 `exhausted()` 抛异常时按 `policy error` 停止）；重复调用拦截在循环（`tool+args` 归一化后相同则不执行）；每步允许调用 `memory.compact(summarizer)` 触发折叠，摘要逻辑本身不得写在循环里 |
+| 失败策略（不得 fatal） | LLM 异常 → 重试 `max_llm_retries` 次，仍失败返回 `stopped_reason="llm error: ..."`；工具异常 → `Observation.failure("tool crashed: ...")`；`Policy.check` 异常 → deny（fail-closed）；`Policy.exhausted/spend` 异常 → 按 `policy error` 停止或忽略；`Memory.view/add/compact` 异常 → 降级并继续 |
 | 允许扩展 | 换范式（Plan-Execute / Reflexion）= 新循环实现，接口不变；可注入 `observer: TurnObserver`，每轮写入后回调 |
 | observer 约束 | core 只调用 `observer.on_turn(turn)`，不得读取 turn 内容做判断；observer 异常必须吞掉，不得影响循环结果 |
 | 禁止 | 循环内 import 具体工具/registry/后端；循环内实现摘要逻辑；循环内写盘 |
@@ -229,6 +231,8 @@
 | 12 | `summary_persist` | 关闭（进程内） | 开/关 | 跨任务是否复用摘要；当前靠 facts 即可 |
 | 13 | `conflict_policy` | 同 `id` 覆盖 + `score` 重置 0.5 | 覆盖 / 双版本 | 站点改版场景：改版后旧值必须先失效 |
 | 14 | `max_turns`（硬上限） | 200 | 100–500 | 防上下文泄漏导致的 OOM |
+| 15 | `max_llm_retries` | 2 | 0–5 | 统计一次运行里 `retry` 事件次数与最终失败率 |
+| 16 | `retry_backoff` | 0.5s | 0–5s，线性递增 | 观察重试成功率；离线测试固定传 0 |
 
 ## 8. 参数改动规则
 

@@ -1,8 +1,16 @@
-"""The loop. Depends only on ``fish.contracts``."""
+"""The loop. Depends only on ``fish.contracts``.
+
+Failure policy: nothing partial may kill the run.
+* tool exceptions  -> Observation.failure (model decides what to do next)
+* policy exceptions -> deny (fail closed)
+* memory exceptions -> degrade (empty view / skipped record)
+* LLM exceptions    -> retried, then a RunResult with ``stopped_reason="llm error"``
+"""
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Callable, Sequence
 
@@ -23,6 +31,7 @@ from .contracts import (
     Turn,
     TurnObserver,
     Usage,
+    Verdict,
     parse_decision,
 )
 
@@ -44,13 +53,13 @@ Rules:
 - If no tools are available, answer directly with "final".
 {domain_hints}"""
 
+EventHook = Callable[[int, str, str], None]
+
 
 def _render_tools(specs: Sequence[ToolSpec]) -> str:
     if not specs:
         return "(none)"
     return "\n".join(spec.render() for spec in specs)
-
-EventHook = Callable[[int, str, str], None]
 
 
 class Agent:
@@ -65,6 +74,8 @@ class Agent:
         observers: Sequence[TurnObserver] | None = None,
         hints: str = "",
         min_context_tokens: int = 2000,
+        max_llm_retries: int = 2,
+        retry_backoff: float = 0.5,
     ) -> None:
         self._llm = llm
         self._tools = tools
@@ -75,6 +86,8 @@ class Agent:
         self._observers = tuple(observers or ())
         self._hints = hints
         self._min_context = min_context_tokens
+        self._max_retries = max(0, max_llm_retries)
+        self._retry_backoff = max(0.0, retry_backoff)
 
     def run(self) -> RunResult:
         system = SYSTEM_PROMPT.format(
@@ -88,7 +101,10 @@ class Agent:
         last_signature: str | None = None
 
         while True:
-            stopped, reason = self._policy.exhausted()
+            try:
+                stopped, reason = self._policy.exhausted()
+            except Exception as exc:  # a broken policy must stop, not crash
+                stopped, reason = True, f"policy error: {exc}"
             if stopped:
                 return RunResult(
                     answer=f"Stopped: {reason}",
@@ -98,26 +114,39 @@ class Agent:
                 )
 
             step += 1
-            if self._summarizer is not None:
-                try:
-                    folded = self._memory.compact(self._summarizer)
-                except Exception as exc:  # compaction must never break the run
-                    folded = 0
-                    self._emit(step, "compact", f"failed: {exc}")
-                if folded:
-                    self._emit(step, "compact", f"folded {folded} turns")
+            usage = self._compact(step, usage, started)
+
             budget = self._context_budget(usage)
+            try:
+                view = self._memory.view(budget)
+            except Exception as exc:  # degraded memory: continue with the goal only
+                self._emit(step, "memory", f"view failed: {exc}")
+                view = []
             messages: Sequence[Message] = [
                 Message(role=Role.SYSTEM, content=system),
-                *self._memory.view(budget),
+                *view,
             ]
-            reply = self._llm.complete(messages)
+
+            try:
+                reply = self._ask(step, messages)
+            except Exception as exc:
+                reason = f"llm error: {exc}"
+                self._emit(step, "fatal", reason)
+                return RunResult(
+                    answer=f"Stopped: {reason}",
+                    steps=usage.steps,
+                    usage=usage,
+                    stopped_reason=reason,
+                )
+
             usage = Usage(
                 steps=usage.steps + 1,
                 tokens=usage.tokens + reply.tokens,
                 seconds=time.monotonic() - started,
+                estimated_tokens=usage.estimated_tokens
+                + (reply.tokens if reply.source == "estimate" else 0),
             )
-            self._policy.spend(usage)
+            self._spend(usage, step)
 
             decision = parse_decision(reply.text)
             if decision is None:
@@ -147,15 +176,53 @@ class Agent:
             signature = _signature(decision)
             if signature == last_signature:
                 observation = Observation.failure(
-                    "you repeated the exact same call; it will return the same "
-                    "result. Change the call or reply with 'final'."
+                    "you repeated the same call; it will return the same result. "
+                    "Change the call or reply with 'final'."
                 )
                 self._emit(step, "repeat", observation.content)
             else:
                 observation = self._execute(step, decision)
                 last_signature = signature
             self._remember(step, decision, observation)
+
     # -- internals ----------------------------------------------------------
+
+    def _ask(self, step: int, messages: Sequence[Message]):
+        attempt = 0
+        while True:
+            try:
+                return self._llm.complete(messages)
+            except Exception as exc:
+                if attempt >= self._max_retries:
+                    raise
+                attempt += 1
+                self._emit(
+                    step,
+                    "retry",
+                    f"llm error: {exc}; retry {attempt}/{self._max_retries}",
+                )
+                if self._retry_backoff:
+                    time.sleep(self._retry_backoff * attempt)
+
+    def _compact(self, step: int, usage: Usage, started: float) -> Usage:
+        if self._summarizer is None:
+            return usage
+        try:
+            result = self._memory.compact(self._summarizer)
+        except Exception as exc:  # compaction must never break the run
+            self._emit(step, "compact", f"failed: {exc}")
+            return usage
+        if not result.folded:
+            return usage
+        self._emit(step, "compact", f"folded {result.folded} turns")
+        updated = Usage(
+            steps=usage.steps,
+            tokens=usage.tokens + result.tokens,
+            seconds=time.monotonic() - started,
+            estimated_tokens=usage.estimated_tokens,
+        )
+        self._spend(updated, step)
+        return updated
 
     def _remember(
         self,
@@ -164,7 +231,10 @@ class Agent:
         observation: Observation | None,
     ) -> None:
         turn = Turn(step=step, decision=decision, observation=observation)
-        self._memory.add(turn)
+        try:
+            self._memory.add(turn)
+        except Exception as exc:
+            self._emit(step, "memory", f"add failed: {exc}")
         for observer in self._observers:
             try:
                 observer.on_turn(turn)
@@ -183,11 +253,17 @@ class Agent:
                 f"unknown tool {action.tool!r}; available: {available}"
             )
         else:
-            verdict = self._policy.check(tool.spec, action.args)
+            try:
+                verdict = self._policy.check(tool.spec, action.args)
+            except Exception as exc:
+                verdict = Verdict.deny(f"policy error (fail-closed): {exc}")
             if not verdict.allowed:
                 observation = Observation.failure(f"denied by policy: {verdict.reason}")
             else:
-                observation = tool.run(action.args, ToolContext(step=step))
+                try:
+                    observation = tool.run(action.args, ToolContext(step=step))
+                except Exception as exc:
+                    observation = Observation.failure(f"tool crashed: {exc}")
 
         preview = observation.content
         if len(preview) > 1200:
@@ -195,17 +271,39 @@ class Agent:
         self._emit(step, "result", preview)
         return observation
 
+    def _spend(self, usage: Usage, step: int) -> None:
+        try:
+            self._policy.spend(usage)
+        except Exception as exc:
+            self._emit(step, "policy", f"spend failed: {exc}")
+
     def _context_budget(self, usage: Usage) -> int:
         remaining = self._policy.max_tokens - usage.tokens
-        return max(self._min_context, remaining)
+        return max(self._min_context, min(remaining, self._policy.max_tokens))
 
     def _emit(self, step: int, kind: str, text: str) -> None:
         if self._on_event is not None:
             self._on_event(step, kind, text)
 
 
+_WS = re.compile(r"\s+")
+
+
 def _signature(decision: Decision) -> str:
     action = decision.action
     if action is None:
         return ""
-    return json.dumps([action.tool, action.args], sort_keys=True, ensure_ascii=False)
+    return json.dumps(
+        [action.tool, _normalize(action.args)], sort_keys=True, ensure_ascii=False
+    )
+
+
+def _normalize(value):
+    """Ignore cosmetic differences (whitespace, key order) when detecting repeats."""
+    if isinstance(value, str):
+        return _WS.sub("", value)
+    if isinstance(value, dict):
+        return {key: _normalize(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize(item) for item in value]
+    return value
