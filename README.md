@@ -12,55 +12,58 @@ LLM  ──决定调用哪个工具──▶  agent 循环  ──JSON-RPC/stdio
 ## 为什么这么设计
 
 - **模型本身没有手脚**。它只会输出文本；真正开浏览器的是 MCP server（`chrome-devtools-mcp`，Google 官方，走 Chrome DevTools Protocol）。
-- **不用 function calling 也能跑**。agent 用"单 JSON 协议"约束模型输出，任何后端（包括只会聊天的 CLI 模型）都能当大脑。
+- **不用 function calling 也能跑**。agent 用"单 JSON 协议"约束模型输出，任何 OpenAI 兼容模型都能当大脑，换模型不改代码。
 - **读 DOM 而不是截图**。截图对纯文本模型无意义；`evaluate_script` 直接取页面数据，快且省 token。
 
 ## 快速开始
 
-前置：Windows / macOS / Linux，Python 3.10+，Node 20+，本机装了 Chrome。
+前置：Python 3.10+，Node 20+，本机装了 Chrome，一个 DeepSeek API key。
 
 ```bash
-# 1. 拉 MCP server（第一次会下载）
+# 1. 配 key（.env 已 gitignore，不写进代码）
+copy .env.example .env
+#   编辑 .env，填 FISH_API_KEY=sk-...
+
+# 2. 拉 MCP server（第一次会下载）
 npx -y chrome-devtools-mcp@1.11.0 --version
 
-# 2. 跑默认任务（有界面）
+# 3. 跑默认任务（有界面）
 python main.py
 
-# 3. 无界面 + 自定义目标
+# 4. 无界面 + 自定义目标
 python main.py --headless --goal "打开 https://www.bilibili.com ，总结首页推荐的前 5 个视频"
 ```
 
-## LLM 后端
+## LLM 配置
 
-### `--backend codemaker`（默认，零 API key）
+后端只有一个：任何 OpenAI 兼容的 `/chat/completions`，默认指向 DeepSeek。
 
-调用本机已登录的 `codemaker` CLI 当一次性补全后端：
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `FISH_API_KEY` | 无（必填） | 也认 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` |
+| `FISH_BASE_URL` | `https://api.deepseek.com/v1` | 换网关/本地模型改这里 |
+| `FISH_MODEL` | `deepseek-chat` | 命令行 `--model` 可覆盖 |
+
+读取顺序：真实环境变量 > 仓库根 `.env`。缺 key 时启动即报错，不会静默失败。
+
+换成任意兼容服务（公司网关、Ollama、vLLM）：
 
 ```bash
-python main.py --backend codemaker -m netease-codemaker/glm-5.3-flash
+FISH_BASE_URL=http://127.0.0.1:11434/v1
+FISH_MODEL=qwen2.5:14b
+FISH_API_KEY=ollama          # 本地服务随便填
 ```
-
-凭证由 CLI 自己管理；换机器只要重新 `codemaker` 登录。
-
-### `--backend openai`（任何 OpenAI 兼容接口）
-
-```bash
-set FISH_API_KEY=sk-xxx
-set FISH_BASE_URL=https://api.deepseek.com/v1    # 可选，默认 DeepSeek
-set FISH_MODEL=deepseek-chat                      # 可选
-python main.py --backend openai
-```
-
-也认 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`。**key 只从环境变量读，不要写进代码。**
 
 ## 参数
 
 | 参数 | 说明 |
 |---|---|
 | `--goal` | 给 agent 的任务 |
-| `--backend` | `codemaker` / `openai` |
-| `--model` | 模型名 |
+| `--model` | 覆盖 `FISH_MODEL` |
 | `--max-steps` | 步数预算，默认 12 |
+| `--max-tokens` | token 预算，默认 200000 |
+| `--timeout` | 墙钟预算（秒），默认 1800 |
+| `--allow-dangerous` | 允许 `click` / `fill` 这类改页面的工具 |
 | `--headless` | 不开窗口 |
 | `--quiet` | 不打步骤日志 |
 
@@ -74,7 +77,7 @@ Agent = ⟨LLM, Tools, Memory⟩ × Loop(+Policy)
 
 | 契约 | 实现 | 职责 |
 |---|---|---|
-| `LLMBackend.complete(messages) -> Reply` | `fish/llm.py`：`CodemakerCLI` / `OpenAICompat` | 外接大脑 |
+| `LLMBackend.complete(messages) -> Reply` | `fish/llm.py`：`DeepSeekClient`（任何 OpenAI 兼容接口） | 外接大脑 |
 | `Tool.spec` / `Tool.run(args, ctx) -> Observation` | `fish/tools.py`：`MCPTool`（Chrome MCP 工具） | 行为能力 |
 | `ToolRegistry.specs()/get(name)` | `fish/tools.py`：`MCPToolRegistry` | 工具目录 |
 | `Memory.add(turn)` / `view(budget_tokens)` | `fish/memory.py`：`WindowMemory` | 记忆：滑窗 + 折叠 |
@@ -107,7 +110,7 @@ python eval/selftest.py   # 离线跑：正常路径、策略拦截、坏 JSON�
 ## 已知限制
 
 - 模型看不到图：需要视觉时得换多模态后端，`take_screenshot` 目前只返回占位文本
-- `codemaker` 后端是**一次性补全**，每步要重发全量上下文，比原生 function calling 慢
+- 走单 JSON 协议而非原生 function calling：每步都要重发全量上下文，长任务成本偏高
 - 选择器靠模型自己写 JS，站点改版会退化；生产化应固化每站的取数脚本
 - 单页、单步、无登录态；登录/Cookie 走 `--user-data-dir` 另配
 

@@ -76,10 +76,14 @@ python main.py --headless --max-steps 4 --timeout 600 --quiet
 ```bash
 # 只验后端，不碰浏览器
 python -c "from fish.llm import build_llm; from fish.contracts import Message, Role; \
-print(build_llm('openai', None, None).complete([Message(Role.USER, '回复 OK')]))"
+print(build_llm().complete([Message(Role.USER, '回复 OK')]))"
 ```
 
-已知坑：`codemaker run` 冷启动 + 每步重启进程，实测 600s 超时，不能当在线后端；`openai` 后端才是可用路径。
+已知坑：
+
+- 缺 key 时 `build_llm()` 直接抛 `LLMError`，不会静默走到浏览器
+- `.env` 里的值不会覆盖已存在的真实环境变量，排查"改了没生效"先查 `set FISH_API_KEY`
+- 代理/防火墙会表现为 `cannot reach ...: timed out`，与 HTTP 401（key 错）要分清
 
 ## 交付前清单
 

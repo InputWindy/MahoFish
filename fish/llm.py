@@ -1,95 +1,55 @@
-"""LLM backends. Both implement ``contracts.LLMBackend``.
+"""LLM backend: any OpenAI-compatible ``/chat/completions`` endpoint.
 
-* ``codemaker``  - shells out to a locally installed, already logged-in
-                   ``codemaker`` CLI. No API key required.
-* ``openai``     - any OpenAI-compatible ``/chat/completions`` endpoint
-                   (DeepSeek, CodeMaker gateway, vLLM, Ollama, ...).
+Defaults to DeepSeek. Configuration comes from the environment, or from a
+``.env`` file at the repo root (real env vars win):
+
+    FISH_API_KEY=sk-...
+    FISH_BASE_URL=https://api.deepseek.com/v1
+    FISH_MODEL=deepseek-chat
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
-import shutil
-import subprocess
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Sequence
 
 from .contracts import LLMBackend, Message, Reply, estimate_tokens
 
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class LLMError(RuntimeError):
     pass
 
 
-def _strip_ansi(text: str) -> str:
-    return _ANSI.sub("", text)
+def load_dotenv(path: Path = ENV_FILE) -> None:
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
-def _render_messages(messages: Sequence[Message]) -> str:
-    return "\n\n".join(message.render() for message in messages)
+def _first_env(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
 
 
-class CodemakerCLI(LLMBackend):
-    """Uses `codemaker run` as a one-shot completion backend."""
-
-    name = "codemaker"
-
-    def __init__(
-        self,
-        model: str | None = None,
-        timeout: float = 600.0,
-        workdir: str | None = None,
-    ) -> None:
-        binary = shutil.which("codemaker")
-        if binary is None:
-            raise LLMError(
-                "`codemaker` CLI not found in PATH. Install it, or use "
-                "--backend openai with an API key instead."
-            )
-        self._binary = binary
-        self._model = model
-        self._timeout = timeout
-        self._workdir = workdir
-
-    def complete(self, messages: Sequence[Message]) -> Reply:
-        prompt = _render_messages(messages)
-        argv = [self._binary, "run", "--format", "default"]
-        if self._workdir:
-            argv += ["--dir", self._workdir]
-        if self._model:
-            argv += ["-m", self._model]
-        argv.append(prompt)
-
-        try:
-            proc = subprocess.run(
-                argv,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self._timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise LLMError(f"codemaker run timed out after {self._timeout}s") from exc
-
-        out = _strip_ansi(proc.stdout or "").strip()
-        if proc.returncode != 0 and not out:
-            raise LLMError(
-                f"codemaker run failed (exit {proc.returncode}): "
-                f"{_strip_ansi(proc.stderr or '').strip()[:800]}"
-            )
-        return Reply(text=out, tokens=estimate_tokens(prompt + out))
-
-
-class OpenAICompat(LLMBackend):
-    """Any OpenAI-compatible chat completions endpoint."""
-
-    name = "openai"
+class DeepSeekClient(LLMBackend):
+    name = "deepseek"
 
     def __init__(
         self,
@@ -98,29 +58,30 @@ class OpenAICompat(LLMBackend):
         model: str | None = None,
         timeout: float = 180.0,
     ) -> None:
+        load_dotenv()
         self._base_url = (
             base_url
-            or os.environ.get("FISH_BASE_URL")
-            or os.environ.get("OPENAI_BASE_URL")
+            or _first_env("FISH_BASE_URL", "OPENAI_BASE_URL", "DEEPSEEK_BASE_URL")
             or "https://api.deepseek.com/v1"
         ).rstrip("/")
-        self._api_key = (
-            api_key
-            or os.environ.get("FISH_API_KEY")
-            or os.environ.get("DEEPSEEK_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
+        self._api_key = api_key or _first_env(
+            "FISH_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"
         )
         if not self._api_key:
             raise LLMError(
-                "no API key: set FISH_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY"
+                "missing API key: put FISH_API_KEY=sk-... in .env "
+                "(copy .env.example) or set the env var"
             )
         self._model = (
             model
-            or os.environ.get("FISH_MODEL")
-            or os.environ.get("OPENAI_MODEL")
+            or _first_env("FISH_MODEL", "OPENAI_MODEL", "DEEPSEEK_MODEL")
             or "deepseek-chat"
         )
         self._timeout = timeout
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def complete(self, messages: Sequence[Message]) -> Reply:
         payload: dict[str, Any] = {
@@ -159,9 +120,5 @@ class OpenAICompat(LLMBackend):
         return Reply(text=content, tokens=tokens)
 
 
-def build_llm(backend: str, model: str | None, workdir: str | None) -> LLMBackend:
-    if backend == "openai":
-        return OpenAICompat(model=model)
-    if backend == "codemaker":
-        return CodemakerCLI(model=model, workdir=workdir)
-    raise LLMError(f"unknown backend: {backend}")
+def build_llm(model: str | None = None) -> LLMBackend:
+    return DeepSeekClient(model=model)

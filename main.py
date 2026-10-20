@@ -28,12 +28,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--goal", default=DEFAULT_GOAL, help="what the agent should do")
     parser.add_argument(
-        "--backend",
-        choices=["codemaker", "openai"],
-        default="codemaker",
-        help="LLM backend (default: local codemaker CLI, no API key needed)",
+        "--model",
+        default=None,
+        help="override FISH_MODEL (default: deepseek-chat)",
     )
-    parser.add_argument("--model", default=None, help="model name for the backend")
     parser.add_argument("--max-steps", type=int, default=12, help="step budget")
     parser.add_argument("--max-tokens", type=int, default=200_000, help="token budget")
     parser.add_argument(
@@ -57,12 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:
-        llm = build_llm(args.backend, args.model, workdir=None)
+        llm = build_llm(args.model)
     except LLMError as exc:
         print(f"[llm] {exc}", file=sys.stderr)
         return 2
 
-    print(f"[fish] backend={llm.name} goal={args.goal}", flush=True)
+    print(f"[fish] backend={llm.name} model={llm.model} goal={args.goal}", flush=True)
     with build_chrome_client(headless=args.headless) as client:
         registry = MCPToolRegistry(client)
         specs = registry.specs()
