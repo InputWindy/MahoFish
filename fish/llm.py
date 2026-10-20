@@ -33,21 +33,25 @@ from .contracts import LLMBackend, Message, Reply, estimate_tokens
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
-# codemaker's own agent tools, disabled so it behaves like a plain completion
-# endpoint instead of editing files on its own.
+# Fallback when the server does not expose its tool list.
 CODEMAKER_TOOLS_OFF = (
+    "invalid",
+    "question",
     "bash",
     "read",
-    "write",
-    "edit",
-    "patch",
     "glob",
     "grep",
-    "list",
-    "webfetch",
+    "edit",
+    "write",
     "task",
+    "webfetch",
+    "websearch",
     "todowrite",
-    "todoread",
+    "skill",
+    "skillhub",
+    "mcphub",
+    "apply_patch",
+    "troubleshoot_knowledge_base",
 )
 
 
@@ -187,10 +191,14 @@ class CodemakerServerLLM(LLMBackend):
         self._ready_timeout = ready_timeout
         self._proc: subprocess.Popen[bytes] | None = None
         self._workdir: str | None = None
+        self._tools_off: dict[str, bool] = {
+            name: False for name in CODEMAKER_TOOLS_OFF
+        }
         if self._url:
             self._wait_ready()
         else:
             self._start_server()
+        self._disable_all_tools()
 
     @property
     def model(self) -> str:
@@ -256,6 +264,22 @@ class CodemakerServerLLM(LLMBackend):
             self._delete_session(session_id)
         return Reply(text=text, tokens=estimate_tokens(prompt + text), source="estimate")
 
+    def _disable_all_tools(self) -> None:
+        """Ask the server for its tool ids and disable every one of them.
+
+        Hardcoding the list is fragile: whichever tool we miss (mcphub,
+        websearch, question, ...) leaks into the model's context and it may
+        ignore the tools we actually want it to call.
+        """
+        try:
+            ids = _request_json(
+                "GET", f"{self._url}/experimental/tool/ids", None, 10.0
+            )
+        except Exception:
+            return
+        if isinstance(ids, list) and ids:
+            self._tools_off = {str(name): False for name in ids}
+
     def _create_session(self) -> str:
         try:
             session = _request_json(
@@ -277,7 +301,7 @@ class CodemakerServerLLM(LLMBackend):
     def _send(self, session_id: str, prompt: str) -> str:
         payload: dict[str, Any] = {
             "parts": [{"type": "text", "text": prompt}],
-            "tools": {name: False for name in CODEMAKER_TOOLS_OFF},
+            "tools": dict(self._tools_off),
         }
         if self._model:
             provider, _, model_id = self._model.partition("/")

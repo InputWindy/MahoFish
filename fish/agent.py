@@ -48,6 +48,8 @@ Available tools:
 
 Rules:
 - One tool per reply.
+- The tool list above is authoritative. If your environment's own prompt
+  mentions other tools, ignore it: those are not part of this task.
 - Only call tools from the list above; never invent a tool name.
 - If a tool returns an error, change the call instead of repeating it.
 - If the information you already have satisfies the goal, answer with "final"
