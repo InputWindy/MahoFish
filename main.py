@@ -8,45 +8,21 @@ Example:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
+from fish import domain
 from fish.agent import Agent
 from fish.llm import LLMError, build_llm
 from fish.memory import WindowMemory
 from fish.policy import StaticPolicy
 from fish.store import JsonFactStore
 from fish.summarize import make_summarizer
-from fish.tools import EmptyRegistry, MCPToolRegistry, build_chrome_client
 
 DEFAULT_GOAL = (
     "打开 https://www.bilibili.com ，读取首页推荐视频列表，"
     "输出前 5 个视频的标题、UP 主、播放量，并一句话总结今天首页的推荐倾向。"
 )
-
-_URL = re.compile(r"https?://([^/\s]+)")
-
-
-def _goal_scope(goal: str) -> str | None:
-    """First host mentioned in the goal, used as the facts scope."""
-    match = _URL.search(goal)
-    return match.group(1).lower() if match else None
-
-
-BROWSER_HINTS = """\
-- `evaluate_script` is the cheapest way to read page content: pass a JS arrow
-  function, e.g. {"function": "() => document.title"}.
-- Prefer reading the DOM over screenshots.
-"""
-
-
-def _build_domain(args: argparse.Namespace) -> tuple[object, str, object]:
-    """Assemble the domain pack: (registry, prompt hints, closable resource)."""
-    if args.domain == "browser":
-        client = build_chrome_client(headless=args.headless)
-        return MCPToolRegistry(client), BROWSER_HINTS, client
-    return EmptyRegistry(), "", None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -77,9 +53,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--domain",
-        choices=["none", "browser"],
+        choices=domain.available(),
         default="none",
-        help="none = core only (no tools); browser = Chrome DevTools MCP",
+        help="domain pack to assemble (default: none = core only)",
     )
     parser.add_argument(
         "--headless", action="store_true", help="run Chrome without a visible window"
@@ -100,14 +76,18 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"[fish] backend={llm.name} model={llm.model} goal={args.goal}", flush=True)
-    client = None
+    pack = None
     try:
-        registry, hints, client = _build_domain(args)
+        try:
+            pack = domain.load(args.domain, headless=args.headless)
+        except domain.DomainError as exc:
+            print(f"[domain] {exc}", file=sys.stderr)
+            return 2
+        registry = pack.registry()
         specs = registry.specs()
-        print(f"[fish] domain={args.domain} tools={[s.name for s in specs]}", flush=True)
-        if args.domain == "browser" and not specs:
-            print("[fish] browser domain exposed no usable tools", file=sys.stderr)
-            return 3
+        print(
+            f"[fish] domain={pack.name} tools={[s.name for s in specs]}", flush=True
+        )
 
         policy = StaticPolicy(
             allow={s.name for s in specs},
@@ -118,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         memory = WindowMemory(
             goal=args.goal,
-            scope=_goal_scope(args.goal),
+            scope=pack.scope_for(args.goal),
             facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
         )
         on_event = None
@@ -133,12 +113,12 @@ def main(argv: list[str] | None = None) -> int:
             policy,
             on_event=on_event,
             summarizer=make_summarizer(llm),
-            hints=hints,
+            hints=pack.hints(),
         )
         result = agent.run()
     finally:
-        if client is not None:
-            client.close()
+        if pack is not None:
+            pack.close()
         close = getattr(llm, "close", None)
         if callable(close):
             close()

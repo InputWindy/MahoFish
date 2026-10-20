@@ -148,8 +148,12 @@
 
 | 项 | 内容 |
 |---|---|
-| 定义 | 按领域封装的扩展模块，放 `fish/domains/<domain>.py`；实现 `TurnObserver` 或提供该域专用工具 |
-| 规则 | ① core **不得 import** 任何 `fish.domains.*`；② 由组合根（`main.py`）装配并注入；③ 插件失败必须降级，不得中断任务 |
+| 定义 | 按领域封装的扩展模块，放 `fish/domains/<domain>.py`，实现 `DomainPack`（`fish/domain.py`） |
+| 接口 | `capabilities: DomainCapabilities` + `registry()`；可选 `hints()` / `observers()` / `scope_for(goal)` / `close()` |
+| 注册 | 内置映射（`none` / `browser`）；第三方域走 Python entry points（group `fish.domains`），不扫目录 |
+| 生命周期 | 组合根装配 → 校验能力声明 → 运行 → `close()`（必须幂等） |
+| 规则 | ① core **不得 import** 任何 `fish.domains.*`；② 由组合根（`main.py`）装配并注入；③ 插件失败必须降级，不得中断任务；④ **能力声明必须与实现一致**，装配期由 `validate()` 拒绝不一致（照 MCP 能力协商，早失败）；⑤ 运行期工具异常仍走 `Observation.failure`，域内部异常记录后降级 |
+| 基线 | 能力声明与失败隔离借鉴 [MCP 生命周期规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)；注册方式用 [Python entry points](https://packaging.python.org/guides/creating-and-discovering-plugins/) |
 | 允许扩展 | 新增域（browser / desktop / im）、同域多插件（不同抽取策略） |
 | 禁止 | 在插件里改循环行为、改协议、绕过 Policy；把域知识（站点名、选择器规则）写进 core |
 | 演进闸门 | 只有"同一份逻辑需要在 2 个以上域复用"时，才允许把插件内的逻辑提升为通用模块 |

@@ -21,6 +21,7 @@ from .contracts import (
     ToolRegistry,
     ToolSpec,
     Turn,
+    TurnObserver,
     Usage,
     parse_decision,
 )
@@ -61,6 +62,7 @@ class Agent:
         policy: Policy,
         on_event: EventHook | None = None,
         summarizer: Summarizer | None = None,
+        observers: Sequence[TurnObserver] | None = None,
         hints: str = "",
         min_context_tokens: int = 2000,
     ) -> None:
@@ -70,6 +72,7 @@ class Agent:
         self._policy = policy
         self._on_event = on_event
         self._summarizer = summarizer
+        self._observers = tuple(observers or ())
         self._hints = hints
         self._min_context = min_context_tokens
 
@@ -119,15 +122,13 @@ class Agent:
             decision = parse_decision(reply.text)
             if decision is None:
                 self._emit(step, "model", f"unparsable reply: {reply.text[:300]!r}")
-                self._memory.add(
-                    Turn(
-                        step=step,
-                        decision=None,
-                        observation=Observation.failure(
-                            "your reply was not a single JSON object; "
-                            "reply with {\"tool\": ...} or {\"final\": ...}"
-                        ),
-                    )
+                self._remember(
+                    step,
+                    None,
+                    Observation.failure(
+                        "your reply was not a single JSON object; "
+                        "reply with {\"tool\": ...} or {\"final\": ...}"
+                    ),
                 )
                 continue
 
@@ -135,7 +136,7 @@ class Agent:
                 self._emit(step, "thought", decision.thought)
 
             if decision.is_final:
-                self._memory.add(Turn(step=step, decision=decision, observation=None))
+                self._remember(step, decision, None)
                 return RunResult(
                     answer=decision.final or "",
                     steps=usage.steps,
@@ -153,10 +154,22 @@ class Agent:
             else:
                 observation = self._execute(step, decision)
                 last_signature = signature
-            self._memory.add(
-                Turn(step=step, decision=decision, observation=observation)
-            )
+            self._remember(step, decision, observation)
     # -- internals ----------------------------------------------------------
+
+    def _remember(
+        self,
+        step: int,
+        decision: Decision | None,
+        observation: Observation | None,
+    ) -> None:
+        turn = Turn(step=step, decision=decision, observation=observation)
+        self._memory.add(turn)
+        for observer in self._observers:
+            try:
+                observer.on_turn(turn)
+            except Exception as exc:  # observers must never break the run
+                self._emit(step, "observer", f"failed: {exc}")
 
     def _execute(self, step: int, decision: Decision) -> Observation:
         action = decision.action

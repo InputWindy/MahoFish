@@ -183,6 +183,14 @@ class ToolRegistry(ABC):
         ...
 
 
+class TurnObserver(ABC):
+    """Domain hook fired after each turn is stored. Must never raise."""
+
+    @abstractmethod
+    def on_turn(self, turn: Turn) -> None:
+        ...
+
+
 class Memory(ABC):
     @abstractmethod
     def add(self, turn: Turn) -> None:

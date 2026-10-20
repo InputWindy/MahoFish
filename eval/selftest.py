@@ -27,6 +27,8 @@ from fish.contracts import (
 )
 from fish.memory import MemoryConfig, WindowMemory
 from fish.store import Fact, JsonFactStore
+from fish import domain as domain_mod
+from fish.domain import DomainCapabilities, DomainError, DomainPack, validate
 from fish.policy import StaticPolicy
 
 
@@ -103,6 +105,41 @@ class NoToolsRegistry(ToolRegistry):
 
     def get(self, name: str) -> Tool | None:
         return None
+
+
+class FakeDomain(DomainPack):
+    name = "fake"
+    capabilities = DomainCapabilities(tools=True)
+
+    def __init__(self) -> None:
+        self._registry = FakeRegistry()
+
+    def registry(self) -> ToolRegistry:
+        return self._registry
+
+
+class LiarDomain(FakeDomain):
+    """Claims observers but returns none: must be rejected."""
+
+    name = "liar"
+    capabilities = DomainCapabilities(tools=True, observers=True)
+
+
+def run_domain_case() -> None:
+    validate(FakeDomain())
+    validate(domain_mod.load("none"))
+    try:
+        validate(LiarDomain())
+    except DomainError as exc:
+        print(f"[domain] capability mismatch rejected: {exc}")
+    else:
+        raise AssertionError("declared/implemented mismatch must be rejected")
+    try:
+        domain_mod.load("does-not-exist")
+    except DomainError as exc:
+        print(f"[domain] unknown domain rejected: {exc}")
+    else:
+        raise AssertionError("unknown domain must be rejected")
 
 
 def run_no_tools_case() -> None:
@@ -232,6 +269,7 @@ def main() -> int:
     assert answer == "不再重复", answer
     assert LookupTool.calls == 1, f"tool ran {LookupTool.calls} times, expected 1"
 
+    run_domain_case()
     run_no_tools_case()
     run_compact_case()
     run_store_case()

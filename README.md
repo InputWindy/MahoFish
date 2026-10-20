@@ -87,6 +87,7 @@ FISH_API_KEY=ollama          # 本地服务随便填
 | 参数 | 说明 |
 |---|---|
 | `--goal` | 给 agent 的任务 |
+| `--domain` | `none`（默认，纯核心）/ `browser`（Chrome DevTools MCP） |
 | `--backend` | `codemaker`（默认，开发）/ `deepseek`（发布） |
 | `--model` | 覆盖 `FISH_MODEL` |
 | `--max-steps` | 步数预算，默认 12 |
@@ -118,7 +119,11 @@ Agent = ⟨LLM, Tools, Memory⟩ × Loop(+Policy)
 | `main.py` | CLI 入口，组装五块 |
 | `fish/contracts.py` | 全部协议、数据类、JSON 决策解析 |
 | `fish/mcp.py` | 手写 MCP stdio 客户端（initialize / tools/list / tools/call） |
+| `fish/domain.py` | 域扩展协议：`DomainPack` / 能力声明 / 装配与校验 |
+| `fish/domains/browser.py` | 浏览器域：Chrome MCP 工具 + 提示 + URL scope |
+| `fish/domains/core.py` | 无域核心：零工具，只能直接作答 |
 | `eval/selftest.py` | 离线自测：FakeLLM/FakeTool 驱动循环，不用网络 |
+| `eval/domain_check.py` | 域合规检查：能力声明、工具描述、close 幂等 |
 
 纯标准库，没有 pip 依赖。
 
