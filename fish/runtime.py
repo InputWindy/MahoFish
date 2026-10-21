@@ -78,6 +78,8 @@ def run_episode(config: EpisodeConfig) -> RunResult:
             summarizer=make_summarizer(llm),
             observers=config.observers,
             hints=_safe(pack.hints, default="") + config.hints_extra,
+            identity=f"MahoFish, backend={getattr(llm, 'name', '?')}, "
+            f"model={getattr(llm, 'model', '?')}",
             max_llm_retries=config.max_llm_retries,
         )
         return agent.run()

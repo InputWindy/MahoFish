@@ -41,6 +41,8 @@ SYSTEM_PROMPT = """\
 You are an autonomous agent. You cannot see anything directly; the only things
 you know come from tool results and your memory of them.
 
+Runtime: {identity}
+
 {protocol}
 
 Available tools:
@@ -89,6 +91,7 @@ class Agent:
         summarizer: Summarizer | None = None,
         observers: Sequence[TurnObserver] | None = None,
         hints: str = "",
+        identity: str = "",
         min_context_tokens: int = 2000,
         max_llm_retries: int = 2,
         retry_backoff: float = 0.5,
@@ -101,6 +104,7 @@ class Agent:
         self._summarizer = summarizer
         self._observers = tuple(observers or ())
         self._hints = hints
+        self._identity = identity or "MahoFish (backend unknown)"
         self._min_context = min_context_tokens
         self._max_retries = max(0, max_llm_retries)
         self._retry_backoff = max(0.0, retry_backoff)
@@ -108,6 +112,7 @@ class Agent:
     def run(self) -> RunResult:
         self._faults = []
         system = SYSTEM_PROMPT.format(
+            identity=self._identity,
             protocol=PROTOCOL_HINT,
             tools=_render_tools(
                 self._safe_specs(),
