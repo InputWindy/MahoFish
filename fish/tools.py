@@ -114,6 +114,24 @@ class MCPToolRegistry(ToolRegistry):
         return self._page_id
 
 
+class LocalRegistry(ToolRegistry):
+    """Registry over in-process tools (not MCP-backed)."""
+
+    def __init__(self, tools: list[Tool]) -> None:
+        self._tools: dict[str, Tool] = {}
+        for tool in tools:
+            name = tool.spec.name
+            if name in self._tools:
+                raise ValueError(f"duplicate tool name {name!r}")
+            self._tools[name] = tool
+
+    def specs(self) -> list[ToolSpec]:
+        return [tool.spec for tool in self._tools.values()]
+
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+
+
 class EmptyRegistry(ToolRegistry):
     """Domain-free core: no tools, loop only produces final answers."""
 

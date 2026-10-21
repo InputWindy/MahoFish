@@ -27,6 +27,7 @@ ENTRY_POINT_GROUP = "fish.domains"
 _BUILTIN: dict[str, str] = {
     "none": "fish.domains.core:CoreDomain",
     "browser": "fish.domains.browser:BrowserDomain",
+    "notify": "fish.domains.notify:NotifyDomain",
 }
 
 DomainFactory = Callable[..., "DomainPack"]

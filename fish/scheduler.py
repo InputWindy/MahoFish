@@ -17,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .notify import Notifier, NotifierError, build_notifier
+from .contracts import ToolContext
+from .notify import build_notify_tool
 from .runtime import EpisodeConfig, run_episode
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,8 +35,14 @@ def load_jobs(path: Path) -> list[dict[str, Any]]:
             raise SystemExit(f"job missing id/goal: {job}")
         job.setdefault("domain", "none")
         job.setdefault("backend", "deepseek")
-        job.setdefault("notifier", "file")
+        job.setdefault("notify", ["file"])
         job.setdefault("every_seconds", 24 * 3600)
+        channels = job["notify"]
+        if isinstance(channels, str):
+            channels = [channels]
+        for channel in channels:  # fail at load, not at 3am
+            build_notify_tool(str(channel))
+        job["notify"] = [str(channel) for channel in channels]
     return jobs
 
 
@@ -78,7 +85,6 @@ def render(title: str, result, job: dict[str, Any]) -> str:
 
 
 def run_job(job: dict[str, Any], verbose: bool) -> tuple[bool, str]:
-    notifier: Notifier = build_notifier(str(job["notifier"]))
     on_event = None
     if verbose:
         def on_event(step: int, kind: str, text: str) -> None:
@@ -102,12 +108,12 @@ def run_job(job: dict[str, Any], verbose: bool) -> tuple[bool, str]:
         )
     except Exception as exc:  # a broken job must not stop the scheduler
         text = f"job failed: {type(exc).__name__}: {exc}"
-        destination = _safe_send(notifier, f"fish/{job['id']} FAILED", text)
+        destination = notify(job, f"fish/{job['id']} FAILED", text)
         print(f"[{job['id']}] {text} -> {destination}", flush=True)
         return False, text
 
     text = render(job["id"], result, job)
-    destination = _safe_send(notifier, f"fish/{job['id']}", text)
+    destination = notify(job, f"fish/{job['id']}", text)
     ok = result.stopped_reason == "final"
     print(
         f"[{job['id']}] {'ok' if ok else 'stopped'} "
@@ -118,12 +124,16 @@ def run_job(job: dict[str, Any], verbose: bool) -> tuple[bool, str]:
     return ok, text
 
 
-def _safe_send(notifier: Notifier, title: str, text: str) -> str:
-    try:
-        return notifier.send(title, text)
-    except Exception as exc:
-        print(f"[notify] {title} failed: {exc}", file=sys.stderr, flush=True)
-        return f"notify failed: {exc}"
+def notify(job: dict[str, Any], title: str, text: str) -> str:
+    """Host-side tool invocation: same tools the agent would use, no model."""
+    results: list[str] = []
+    for channel in job["notify"]:
+        tool = build_notify_tool(channel)
+        observation = tool.run({"title": title, "text": text}, ToolContext(step=0))
+        results.append(observation.content)
+        if not observation.ok:
+            print(f"[notify] {channel}: {observation.content}", file=sys.stderr, flush=True)
+    return "; ".join(results)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -138,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         jobs = load_jobs(Path(args.jobs))
-    except (OSError, json.JSONDecodeError, NotifierError) as exc:
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"[scheduler] {exc}", file=sys.stderr)
         return 2
 

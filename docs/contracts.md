@@ -161,6 +161,19 @@
 | 禁止 | 在插件里改循环行为、改协议、绕过 Policy；把域知识（站点名、选择器规则）写进 core |
 | 演进闸门 | 只有"同一份逻辑需要在 2 个以上域复用"时，才允许把插件内的逻辑提升为通用模块 |
 
+### C16 · 通知工具（Tool 的专用子类）
+
+| 项 | 内容 |
+|---|---|
+| 分层 | `Tool`（契约） → `NotifyTool`（通知语义样板，`fish/notify.py`） → `ConsoleNotifyTool` / `FileNotifyTool` / `PopoNotifyTool`（只实现 `send`） |
+| 命名 | `spec.name = f"notify_{channel}"`，`channel ∈ {console, file, popo, ...}` |
+| 参数 | 固定 `title: str`（必填）、`text: str`（必填）、`to: str`（可选） |
+| 语义 | `dangerous=True`（外部副作用）、`idempotent=False`（重复调用会重复发送）；`text` 为空 → `Observation.failure`；超过 4000 字符截断并标记 |
+| 失败 | `run` 永不抛异常，渠道故障 → `Observation.failure("... send failed: ...")` |
+| 调用者 | ① agent（经域 `notify` 暴露）② 宿主（`scheduler` 直接 `tool.run(...)`，不经过模型）——同一份实现 |
+| 禁止 | ① 在 Tool 体系外另造 Notifier 抽象；② 把 token/webhook 放进参数；③ 给 `NotifyTool` 增加契约外的方法（删掉它、直接继承 `Tool` 后 Agent/Policy/域协议应零改动） |
+| 实现状态 | `console` / `file` 已实现；`popo` 待接（传输层可复用 `popo-cli` 或 POPO MCP 机器人接口） |
+
 ---
 
 ## 2. 判定：小需求该改哪儿

@@ -26,6 +26,7 @@ from fish.contracts import (
     Turn,
 )
 from fish.memory import MemoryConfig, WindowMemory
+from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool
 from fish.store import Fact, JsonFactStore
 from fish import domain as domain_mod
 from fish.domain import DomainCapabilities, DomainError, DomainPack, validate
@@ -363,6 +364,34 @@ def run_contract_violation_cases() -> None:
     assert result.answer == "工具返错类型也能继续", result.answer
 
 
+def run_notify_case() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tool = FileNotifyTool(tmp)
+        spec = tool.spec
+        assert spec.name == "notify_file", spec.name
+        assert spec.dangerous and not spec.idempotent, spec
+        assert set(spec.parameters["properties"]) == {"title", "text", "to"}
+
+        empty = tool.run({"title": "t", "text": "   "}, ToolContext(step=1))
+        assert not empty.ok, empty
+
+        long_text = "字" * (MAX_TEXT + 50)
+        ok = tool.run({"title": "长文本", "text": long_text}, ToolContext(step=1))
+        assert ok.ok, ok
+        path = Path(ok.content.split("sent via file to ", 1)[-1])
+        assert path.is_file(), ok.content
+        assert "[truncated]" in path.read_text(encoding="utf-8")
+
+        console = ConsoleNotifyTool()
+        assert console.spec.name == "notify_console"
+
+        pack = domain_mod.load("notify", channels=["file:" + tmp])
+        names = [s.name for s in pack.registry().specs()]
+        assert names == ["notify_file"], names
+        pack.close()
+    print("[notify] contract (naming/flags/schema/truncation/domain) OK")
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -484,6 +513,7 @@ def main() -> int:
     run_failure_cases()
     run_last_resort_cases()
     run_contract_violation_cases()
+    run_notify_case()
     run_compact_case()
     run_store_case()
 

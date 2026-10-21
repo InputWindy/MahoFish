@@ -182,7 +182,7 @@ job 定义（`fish/jobs.example.json`）：
 | 字段 | 说明 |
 |---|---|
 | `every_seconds` | 间隔；状态存在 `.fish/scheduler_state.json`，重启不会重跑 |
-| `notifier` | `console` / `file` / `file:<dir>` |
+| `notify` | `["file:.fish/reports"]` / `["console"]`，可多渠道 |
 | `backend` | 带工具的域请用 `deepseek` |
 | 失败处理 | 单个 job 失败只记日志并推送失败信息，不中断调度 |
 
@@ -192,15 +192,31 @@ job 定义（`fish/jobs.example.json`）：
 schtasks /create /tn fish_daily /tr "cmd /c cd /d D:\PM\Fish && python -m fish.scheduler --once" /sc daily /st 09:00
 ```
 
-### 通知渠道
+### 通知渠道（Tool 形态）
 
-内置 `console` 和 `file` 两个 `Notifier`，新增渠道只写一个类（`fish/notify.py`），不改调度器：
+通知不是宿主私有的抽象，而是 `Tool` 的专用子类：
+
+```
+Tool → NotifyTool → ConsoleNotifyTool / FileNotifyTool / PopoNotifyTool
+```
+
+- 命名固定 `notify_<channel>`，参数固定 `title` / `text` / `to?`
+- `dangerous=True`、`idempotent=False`（外部副作用，重复调用会重复发送）
+- `run` 永不抛异常，渠道故障返回 `Observation.failure`
+- **同一份实现两个调用者**：agent 通过 `notify` 域调用；scheduler 直接 `tool.run(...)`，不经过模型
+
+新增渠道只需写一个 `send`：
 
 ```python
-class PopoNotifier(Notifier):
+class PopoNotifyTool(NotifyTool):
     channel = "popo"
-    def send(self, title, text) -> str: ...
+
+    def send(self, title: str, text: str, to: str) -> str:
+        # 调 popo-cli 或 POPO MCP 的机器人接口
+        ...
 ```
+
+job 里写 `"notify": ["file:.fish/reports", "console"]` 即可多渠道。
 
 **QQ 不建议接**：需要独立 QQ 号 + 第三方协议端（NapCat/onebot），违反腾讯条款、封号风险高、还要维护掉线重连。POPO 机器人、邮件、企业微信都更稳。
 

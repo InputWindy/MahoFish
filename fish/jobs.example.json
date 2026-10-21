@@ -6,7 +6,7 @@
       "domain": "browser",
       "domain_options": {"headless": true},
       "backend": "deepseek",
-      "notifier": "file:.fish/reports",
+      "notify": ["file:.fish/reports"],
       "every_seconds": 86400,
       "max_steps": 8,
       "timeout": 300
@@ -16,7 +16,7 @@
       "goal": "用三句话说明 agent 循环里最容易出错的一个环节，以及怎么兜底。",
       "domain": "none",
       "backend": "codemaker",
-      "notifier": "console",
+      "notify": ["console"],
       "every_seconds": 86400,
       "max_steps": 2,
       "timeout": 60
