@@ -9,30 +9,14 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from fish import domain
-from fish.agent import Agent
-from fish.llm import build_llm
-from fish.memory import WindowMemory
-from fish.policy import StaticPolicy
-from fish.store import JsonFactStore
-from fish.summarize import make_summarizer
+from fish.runtime import EpisodeConfig, run_episode
 
 DEFAULT_GOAL = (
     "打开 https://www.bilibili.com ，读取首页推荐视频列表，"
     "输出前 5 个视频的标题、UP 主、播放量，并一句话总结今天首页的推荐倾向。"
 )
-
-
-def _safe_call(fn, *args, default=None):
-    """Composition-root boundary: a broken domain must not crash the app."""
-    try:
-        return fn(*args)
-    except Exception as exc:
-        name = getattr(fn, "__name__", "call")
-        print(f"[domain] {name} failed: {exc}", file=sys.stderr)
-        return default
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -85,62 +69,39 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     args = parse_args(argv)
 
+    def on_llm(name: str, model: str) -> None:
+        print(f"[fish] backend={name} model={model} goal={args.goal}", flush=True)
+
+    def on_tools(name: str, tools: list[str]) -> None:
+        print(f"[fish] domain={name} tools={tools}", flush=True)
+
+    def on_event(step: int, kind: str, text: str) -> None:
+        if kind == "fault":
+            print(f"[{step:02d}]   FAULT | {text}", file=sys.stderr, flush=True)
+            return
+        if not args.quiet:
+            print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
+
+    config = EpisodeConfig(
+        goal=args.goal,
+        domain=args.domain,
+        domain_options={"headless": args.headless},
+        backend=args.backend,
+        model=args.model,
+        max_steps=args.max_steps,
+        max_tokens=args.max_tokens,
+        timeout=args.timeout,
+        max_llm_retries=args.max_retries,
+        allow_dangerous=args.allow_dangerous,
+        on_event=on_event,
+        on_tools=on_tools,
+        on_llm=on_llm,
+    )
     try:
-        llm = build_llm(args.backend, args.model)
+        result = run_episode(config)
     except Exception as exc:
-        print(f"[llm] {exc}", file=sys.stderr)
+        print(f"[fish] {exc}", file=sys.stderr)
         return 2
-
-    print(f"[fish] backend={llm.name} model={llm.model} goal={args.goal}", flush=True)
-    pack = None
-    try:
-        try:
-            pack = domain.load(args.domain, headless=args.headless)
-        except domain.DomainError as exc:
-            print(f"[domain] {exc}", file=sys.stderr)
-            return 2
-        registry = pack.registry()
-        specs = _safe_call(registry.specs, default=[])
-        print(
-            f"[fish] domain={pack.name} tools={[s.name for s in specs]}", flush=True
-        )
-
-        policy = StaticPolicy(
-            allow={s.name for s in specs},
-            allow_dangerous=args.allow_dangerous,
-            max_steps=args.max_steps,
-            max_tokens=args.max_tokens,
-            deadline_seconds=args.timeout,
-        )
-        memory = WindowMemory(
-            goal=args.goal,
-            scope=_safe_call(pack.scope_for, args.goal, default=None),
-            facts=JsonFactStore(Path.cwd() / ".fish" / "facts.json"),
-        )
-        def on_event(step: int, kind: str, text: str) -> None:
-            if kind == "fault":
-                print(f"[{step:02d}]   FAULT | {text}", file=sys.stderr, flush=True)
-                return
-            if not args.quiet:
-                print(f"[{step:02d}] {kind:>7} | {text}\n", flush=True)
-
-        agent = Agent(
-            llm,
-            registry,
-            memory,
-            policy,
-            on_event=on_event,
-            summarizer=make_summarizer(llm),
-            hints=_safe_call(pack.hints, default=""),
-            max_llm_retries=args.max_retries,
-        )
-        result = agent.run()
-    finally:
-        if pack is not None:
-            _safe_call(pack.close, default=None)
-        close = getattr(llm, "close", None)
-        if callable(close):
-            close()
 
     print("\n=== RESULT ===")
     print(result.answer)

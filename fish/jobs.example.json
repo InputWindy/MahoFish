@@ -1,0 +1,25 @@
+{
+  "jobs": [
+    {
+      "id": "bili_daily",
+      "goal": "打开 https://www.bilibili.com ，读取首页推荐，输出前 5 个视频的标题、UP 主、播放量，并用一句话总结今天的推荐倾向。",
+      "domain": "browser",
+      "domain_options": {"headless": true},
+      "backend": "deepseek",
+      "notifier": "file:.fish/reports",
+      "every_seconds": 86400,
+      "max_steps": 8,
+      "timeout": 300
+    },
+    {
+      "id": "agent_note",
+      "goal": "用三句话说明 agent 循环里最容易出错的一个环节，以及怎么兜底。",
+      "domain": "none",
+      "backend": "codemaker",
+      "notifier": "console",
+      "every_seconds": 86400,
+      "max_steps": 2,
+      "timeout": 60
+    }
+  ]
+}

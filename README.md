@@ -121,7 +121,10 @@ Agent = ⟨LLM, Tools, Memory⟩ × Loop(+Policy)
 
 | 文件 | 职责 |
 |---|---|
-| `main.py` | CLI 入口，组装五块 |
+| `main.py` | CLI 入口，组装一次 episode |
+| `fish/runtime.py` | 一次 episode 的统一装配（main / scheduler / eval 共用） |
+| `fish/scheduler.py` | 定时任务轮询：到点跑一次 episode 并推送 |
+| `fish/notify.py` | 通知渠道：`console` / `file`，可扩展 POPO/邮件 |
 | `fish/contracts.py` | 全部协议、数据类、JSON 决策解析 |
 | `fish/mcp.py` | 手写 MCP stdio 客户端（initialize / tools/list / tools/call） |
 | `fish/domain.py` | 域扩展协议：`DomainPack` / 能力声明 / 装配与校验 |
@@ -149,6 +152,57 @@ python eval/run_tasks.py     # 8 条任务回归集，规则判分 + 基线对�
 | `agent-contracts` | 改 `fish/*.py`、`main.py`、`eval/` | 五契约边界、禁止的依赖方向、改能力时该动哪个文件 |
 | `agent-tool-design` | 新增/修改工具 | 工具粒度、描述写法、`dangerous/idempotent` 标注、错误文案 |
 | `agent-eval` | 验证改动 | Fake → 真工具 → 真模型 三层验证顺序与必备用例 |
+
+## 定时任务
+
+`fish/scheduler.py` 只是一个外层轮询器：到点的 job 跑**一次有界 episode**，然后把结果推给你。agent 循环本身没有"永不停止"模式。
+
+```bash
+python -m fish.scheduler --once        # 立刻跑所有 job（调试用）
+python -m fish.scheduler               # 常驻，默认 60s 轮询
+python -m fish.scheduler --verbose     # 打印每一步
+```
+
+job 定义（`fish/jobs.example.json`）：
+
+```json
+{
+  "id": "bili_daily",
+  "goal": "打开 https://www.bilibili.com ，读取首页推荐，输出前 5 条并总结",
+  "domain": "browser",
+  "domain_options": {"headless": true},
+  "backend": "deepseek",
+  "notifier": "file:.fish/reports",
+  "every_seconds": 86400,
+  "max_steps": 8,
+  "timeout": 300
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `every_seconds` | 间隔；状态存在 `.fish/scheduler_state.json`，重启不会重跑 |
+| `notifier` | `console` / `file` / `file:<dir>` |
+| `backend` | 带工具的域请用 `deepseek` |
+| 失败处理 | 单个 job 失败只记日志并推送失败信息，不中断调度 |
+
+不想常驻时，用 Windows 任务计划或 cron 每天调一次即可：
+
+```bat
+schtasks /create /tn fish_daily /tr "cmd /c cd /d D:\PM\Fish && python -m fish.scheduler --once" /sc daily /st 09:00
+```
+
+### 通知渠道
+
+内置 `console` 和 `file` 两个 `Notifier`，新增渠道只写一个类（`fish/notify.py`），不改调度器：
+
+```python
+class PopoNotifier(Notifier):
+    channel = "popo"
+    def send(self, title, text) -> str: ...
+```
+
+**QQ 不建议接**：需要独立 QQ 号 + 第三方协议端（NapCat/onebot），违反腾讯条款、封号风险高、还要维护掉线重连。POPO 机器人、邮件、企业微信都更稳。
 
 ## 回归集
 
