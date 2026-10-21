@@ -6,7 +6,7 @@
       "domain": "browser",
       "domain_options": {"headless": true},
       "backend": "deepseek",
-      "notify": ["file:.fish/reports"],
+      "notify": ["file:.fish/reports", "popo"],
       "every_seconds": 86400,
       "max_steps": 8,
       "timeout": 300
