@@ -153,6 +153,27 @@ python eval/run_tasks.py     # 8 条任务回归集，规则判分 + 基线对�
 | `agent-tool-design` | 新增/修改工具 | 工具粒度、描述写法、`dangerous/idempotent` 标注、错误文案 |
 | `agent-eval` | 验证改动 | Fake → 真工具 → 真模型 三层验证顺序与必备用例 |
 
+## POPO 对话（轮询）
+
+平台没有推送回调，只能轮询。`fish/popo_chat.py` 监听一个机器人会话，收到**你自己发的**新消息就跑一次 episode，然后用机器人身份在同一会话回复。
+
+```bash
+python -m fish.popo_chat --once --dry-run --since-minutes 60   # 只看不答
+python -m fish.popo_chat --once                                # 处理一次
+python -m fish.popo_chat                                       # 常驻，15s 轮询
+python -m fish.popo_chat --domain browser --backend deepseek --verbose
+```
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--session` | 西蓝花会话 | 监听哪个会话 |
+| `--self` | 自动探测 | 只回复自己发的消息（防陌生人触发） |
+| `--interval` | 15s | 轮询间隔，也是回复延迟上限 |
+| `--since-minutes` | 0 | 首次启动回溯窗口，0 表示只看新消息 |
+| `--dry-run` | 关 | 只打印检测结果，不跑模型、不回复 |
+
+状态存在 `.fish/popo_chat_state.json`（`last_ts` + 已处理 `msg_id`），重启不重放。
+
 ## 定时任务
 
 `fish/scheduler.py` 只是一个外层轮询器：到点的 job 跑**一次有界 episode**，然后把结果推给你。agent 循环本身没有"永不停止"模式。
