@@ -208,15 +208,30 @@ Tool → NotifyTool → ConsoleNotifyTool / FileNotifyTool / PopoNotifyTool
 新增渠道只需写一个 `send`：
 
 ```python
-class PopoNotifyTool(NotifyTool):
-    channel = "popo"
+class MyNotifyTool(NotifyTool):
+    channel = "mychannel"
 
     def send(self, title: str, text: str, to: str) -> str:
-        # 调 popo-cli 或 POPO MCP 的机器人接口
         ...
 ```
 
-job 里写 `"notify": ["file:.fish/reports", "console"]` 即可多渠道。
+job 里写 `"notify": ["file:.fish/reports", "console", "popo"]` 即可多渠道。
+
+### POPO 渠道
+
+`notify_popo` 复用本机已有的 `broccoli-helper` MCP 服务（`~/.codemaker/mcps.json` 里的 stdio 配置），调用它的 `send_popo_notification`，因此**不需要机器人 identify/secret**：
+
+```json
+"notify": ["popo"]                    // 默认发给当前登录用户
+"notify": ["popo:someone@corp.netease.com"]
+```
+
+| 环境变量 | 作用 |
+|---|---|
+| `FISH_POPO_HELPER` | 覆盖 helper 脚本路径（默认从 mcps.json 读取） |
+| `FISH_POPO_RECEIVER` | 覆盖默认收件人邮箱 |
+
+限制：依赖 CodeMaker 安装（helper 脚本与登录态），换机器需重新配置；发送前最好先 `console` 干看一遍内容。
 
 **QQ 不建议接**：需要独立 QQ 号 + 第三方协议端（NapCat/onebot），违反腾讯条款、封号风险高、还要维护掉线重连。POPO 机器人、邮件、企业微信都更稳。
 

@@ -26,7 +26,8 @@ from fish.contracts import (
     Turn,
 )
 from fish.memory import MemoryConfig, WindowMemory
-from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool
+from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool, PopoNotifyTool
+from fish.notify import popo_helper_command
 from fish.store import Fact, JsonFactStore
 from fish import domain as domain_mod
 from fish.domain import DomainCapabilities, DomainError, DomainPack, validate
@@ -385,11 +386,22 @@ def run_notify_case() -> None:
         console = ConsoleNotifyTool()
         assert console.spec.name == "notify_console"
 
-        pack = domain_mod.load("notify", channels=["file:" + tmp])
-        names = [s.name for s in pack.registry().specs()]
-        assert names == ["notify_file"], names
-        pack.close()
-    print("[notify] contract (naming/flags/schema/truncation/domain) OK")
+    pack = domain_mod.load("notify", channels=["file:" + tmp])
+    names = [s.name for s in pack.registry().specs()]
+    assert names == ["notify_file"], names
+    pack.close()
+
+    popo = PopoNotifyTool()
+    assert popo.spec.name == "notify_popo"
+    assert popo.spec.dangerous and not popo.spec.idempotent
+    if popo_helper_command() is None:
+        blocked = popo.run({"title": "t", "text": "x"}, ToolContext(step=1))
+        assert not blocked.ok and "not configured" in blocked.content, blocked
+        print("[notify] popo helper not configured -> failure path OK (no send)")
+    else:
+        print("[notify] popo helper configured; selftest never sends")
+
+    print("[notify] contract (naming/flags/schema/truncation/domain/popo) OK")
 
 
 def run_compact_case() -> None:
