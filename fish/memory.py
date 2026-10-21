@@ -60,6 +60,24 @@ class WindowMemory(Memory):
         return self._scope
 
     @property
+    def summary(self) -> str:
+        return self._summary
+
+    def set_goal(self, goal: str) -> None:
+        self._goal = goal
+
+    def seed(self, summary: str = "", turns: Sequence[Turn] = (), folded: int = 0) -> None:
+        """Restore a persisted session before continuing it."""
+        if summary:
+            self._summary = summary
+        if folded:
+            self._folded = max(self._folded, folded)
+        for turn in turns:
+            self._turns.append(turn)
+        if len(self._turns) > self._config.max_turns:
+            del self._turns[: len(self._turns) - self._config.max_turns]
+
+    @property
     def folded(self) -> int:
         return self._folded
 

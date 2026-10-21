@@ -124,6 +124,9 @@ Agent = ⟨LLM, Tools, Memory⟩ × Loop(+Policy)
 | `main.py` | CLI 入口，组装一次 episode |
 | `fish/runtime.py` | 一次 episode 的统一装配（main / scheduler / eval 共用） |
 | `fish/scheduler.py` | 定时任务轮询：到点跑一次 episode 并推送 |
+| `fish/server.py` | 常驻服务：监听线程 → 队列 → worker → 回复原渠道 |
+| `fish/listeners.py` | 监听来源抽象 + POPO 轮询实现 |
+| `fish/session_store.py` | 会话追加日志：持久化 / 恢复 / 坏行容错 |
 | `fish/notify.py` | 通知渠道：`console` / `file`，可扩展 POPO/邮件 |
 | `fish/contracts.py` | 全部协议、数据类、JSON 决策解析 |
 | `fish/mcp.py` | 手写 MCP stdio 客户端（initialize / tools/list / tools/call） |
@@ -153,26 +156,32 @@ python eval/run_tasks.py     # 8 条任务回归集，规则判分 + 基线对�
 | `agent-tool-design` | 新增/修改工具 | 工具粒度、描述写法、`dangerous/idempotent` 标注、错误文案 |
 | `agent-eval` | 验证改动 | Fake → 真工具 → 真模型 三层验证顺序与必备用例 |
 
-## POPO 对话（轮询）
+## Agent Server（常驻 + 多来源）
 
-平台没有推送回调，只能轮询。`fish/popo_chat.py` 监听一个机器人会话，收到**你自己发的**新消息就跑一次 episode，然后用机器人身份在同一会话回复。
+```
+Listener 线程（POPO / 定时 / ...） → Event 队列 → 单 worker → 回复原渠道
+                                                      │
+                                       会话记忆 .fish/sessions/*.jsonl
+```
 
 ```bash
-python -m fish.popo_chat --once --dry-run --since-minutes 60   # 只看不答
-python -m fish.popo_chat --once                                # 处理一次
-python -m fish.popo_chat                                       # 常驻，15s 轮询
-python -m fish.popo_chat --domain browser --backend deepseek --verbose
+python -m fish.server --once --dry-run --since-minutes 60   # 只看检测，不跑不答
+python -m fish.server --once                                # 处理一轮
+python -m fish.server                                    # 常驻，15s 轮询
+python -m fish.server --verbose --max-steps 8
 ```
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
+| `--channel` | `popo` | 监听来源（目前仅 POPO） |
 | `--session` | 西蓝花会话 | 监听哪个会话 |
-| `--self` | 自动探测 | 只回复自己发的消息（防陌生人触发） |
+| `--self` | 自动探测 | 只响应自己发的消息 |
 | `--interval` | 15s | 轮询间隔，也是回复延迟上限 |
-| `--since-minutes` | 0 | 首次启动回溯窗口，0 表示只看新消息 |
-| `--dry-run` | 关 | 只打印检测结果，不跑模型、不回复 |
+| `--since-minutes` | 0 | 首次启动回溯窗口 |
+| `--no-persist` | 关 | 不落盘会话（敏感场景） |
+| `--once` / `--dry-run` / `--verbose` | — | 单轮 / 只看 / 打步骤 |
 
-状态存在 `.fish/popo_chat_state.json`（`last_ts` + 已处理 `msg_id`），重启不重放。
+**会话记忆**：每轮 turn 追加到 `.fish/sessions/<hash>.jsonl`（append-only，坏一行只丢一条）；压缩摘要也落盘，重启直接复用，不重复付摘要费用。恢复时只载入摘要 + 最近 8 轮，控制上下文。
 
 ## 定时任务
 

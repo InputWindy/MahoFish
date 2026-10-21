@@ -12,7 +12,7 @@ from typing import Callable
 
 from . import domain
 from .agent import Agent
-from .contracts import RunResult
+from .contracts import Memory, RunResult, TurnObserver
 from .llm import build_llm
 from .memory import WindowMemory
 from .policy import StaticPolicy
@@ -34,6 +34,8 @@ class EpisodeConfig:
     allow_dangerous: bool = False
     facts_path: Path | None = None
     hints_extra: str = ""
+    memory: Memory | None = None
+    observers: list[TurnObserver] | None = None
     on_event: Callable[[int, str, str], None] | None = None
     on_tools: Callable[[str, list[str]], None] | None = None
     on_llm: Callable[[str, str], None] | None = None
@@ -59,7 +61,7 @@ def run_episode(config: EpisodeConfig) -> RunResult:
             deadline_seconds=config.timeout,
         )
         facts_path = config.facts_path or (Path.cwd() / ".fish" / "facts.json")
-        memory = WindowMemory(
+        memory = config.memory or WindowMemory(
             goal=config.goal,
             scope=_safe(pack.scope_for, config.goal, default=None),
             facts=JsonFactStore(facts_path),
@@ -71,6 +73,7 @@ def run_episode(config: EpisodeConfig) -> RunResult:
             policy,
             on_event=config.on_event,
             summarizer=make_summarizer(llm),
+            observers=config.observers,
             hints=_safe(pack.hints, default="") + config.hints_extra,
             max_llm_retries=config.max_llm_retries,
         )

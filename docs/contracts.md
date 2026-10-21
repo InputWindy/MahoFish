@@ -86,7 +86,7 @@
 | 组装顺序 | `FACTS`（≤15% 预算，永不裁剪） → `SUMMARY`（≤25%） → `RECENT TURNS`（剩余） |
 | 规则 | ① 只返回 `Message`；② **view 必须是纯函数**（不发网络请求、不调模型）；③ 压缩由循环显式调用 `compact()` 触发，`Summarizer` 以回调注入，`Memory` 不 import LLM；④ 预算不足时先从 recent 尾部砍 |
 | scope | facts 检索所需的域在**构造时注入**（每个任务一个 Memory 实例），不通过 `view` 参数传入 |
-| 允许扩展 | 换压缩策略（滑窗/滚动摘要/检索）不改接口；新增 fact 检索维度不改接口 |
+| 允许扩展 | 换压缩策略（滑窗/滚动摘要/检索）不改接口；新增 fact 检索维度不改接口；`set_goal()` 为可选方法（默认 no-op），用于同一 Memory 跨轮复用 |
 | 禁止 | 返回非 Message；在 view 里发网络请求；把权限/预算判断塞进 memory；在 add 里压缩 |
 | 实现状态 | `WindowMemory` 已实现 RECENT + 折叠台账 + `compact()`；FACTS 待实现（协议先冻结） |
 
@@ -143,7 +143,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 定义 | 运行时数据统一在 `.fish/`（`facts.json`、后续 `sessions/`、`logs/`），已 gitignore |
+| 定义 | 运行时数据统一在 `.fish/`（`facts.json`、`sessions/*.jsonl`、`reports/`、`*_state.json`），已 gitignore |
 | 规则 | 原子写（临时文件 + `os.replace`）；读失败降级为空，不阻塞主流程 |
 | 禁止 | 往仓库其他目录写运行时数据；把 `.fish/` 提交进版本库 |
 

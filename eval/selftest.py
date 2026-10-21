@@ -29,6 +29,7 @@ from fish.memory import MemoryConfig, WindowMemory
 from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool, PopoNotifyTool
 from fish.notify import popo_helper_command
 from fish.store import Fact, JsonFactStore
+from fish.session_store import SessionStore
 from fish import domain as domain_mod
 from fish.domain import DomainCapabilities, DomainError, DomainPack, validate
 from fish.policy import StaticPolicy
@@ -404,6 +405,46 @@ def run_notify_case() -> None:
     print("[notify] contract (naming/flags/schema/truncation/domain/popo) OK")
 
 
+def run_session_case() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = SessionStore(tmp)
+        sid = "13e43356@app.robot.popo.com"
+        store.set_goal(sid, "第一轮")
+        store.append_turn(
+            sid,
+            Turn(
+                step=1,
+                decision=Decision(thought="t", action=Action("lookup", {"q": "x"})),
+                observation=Observation.success("ok"),
+            ),
+        )
+        store.append_summary(sid, "摘要A", 4)
+        store.append_turn(
+            sid,
+            Turn(step=2, decision=Decision(thought="t", final="done"), observation=None),
+        )
+
+        snapshot = store.load(sid, keep_turns=8)
+        assert snapshot.goal == "第一轮", snapshot.goal
+        assert snapshot.summary == "摘要A", snapshot.summary
+        assert snapshot.folded == 4, snapshot.folded
+        assert len(snapshot.turns) == 2, snapshot.turns
+
+        memory = WindowMemory(goal="第一轮")
+        memory.seed(snapshot.summary, snapshot.turns, snapshot.folded)
+        assert memory.summary == "摘要A"
+        assert memory.folded == 4
+        assert "摘要A" in memory.view(4000)[0].content
+
+        memory.set_goal("第二轮")
+        assert memory.goal == "第二轮"
+
+        with store.path_for(sid).open("a", encoding="utf-8") as stream:
+            stream.write('{"t":"turn","step":3')  # torn write from a crash
+        assert len(store.load(sid).turns) == 2, "torn line must be skipped"
+    print("[session] persist -> restore -> new goal, torn line tolerated")
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -526,6 +567,7 @@ def main() -> int:
     run_last_resort_cases()
     run_contract_violation_cases()
     run_notify_case()
+    run_session_case()
     run_compact_case()
     run_store_case()
 

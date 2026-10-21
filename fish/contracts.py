@@ -236,6 +236,10 @@ class Memory(ABC):
     def reset(self) -> None:
         ...
 
+    def set_goal(self, goal: str) -> None:
+        """Optional: point the same memory at a new turn of the conversation."""
+        return None
+
 
 class Policy(ABC):
     @property
