@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from . import domain
 from .agent import Agent
@@ -36,6 +36,7 @@ class EpisodeConfig:
     hints_extra: str = ""
     memory: Memory | None = None
     observers: list[TurnObserver] | None = None
+    pack: Any | None = None
     on_event: Callable[[int, str, str], None] | None = None
     on_tools: Callable[[str, list[str]], None] | None = None
     on_llm: Callable[[str, str], None] | None = None
@@ -45,9 +46,11 @@ def run_episode(config: EpisodeConfig) -> RunResult:
     llm = build_llm(config.backend, config.model)
     if config.on_llm is not None:
         config.on_llm(getattr(llm, "name", "unknown"), getattr(llm, "model", "-"))
-    pack = None
+    borrowed = config.pack is not None
+    pack = config.pack
     try:
-        pack = domain.load(config.domain, **config.domain_options)
+        if pack is None:
+            pack = domain.load(config.domain, **config.domain_options)
         registry = pack.registry()
         specs = _safe(registry.specs, default=[])
         if config.on_tools is not None:
@@ -79,7 +82,7 @@ def run_episode(config: EpisodeConfig) -> RunResult:
         )
         return agent.run()
     finally:
-        if pack is not None:
+        if pack is not None and not borrowed:
             try:
                 pack.close()
             except Exception:

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from . import domain
 from .contracts import ToolContext
 from .listeners import Event, Listener, PopoListener, current_user
 from .memory import WindowMemory
@@ -52,6 +53,7 @@ class Server:
             persist=config.persist,
         )
         self._facts = config.facts_path or (ROOT / ".fish" / "facts.json")
+        self._pack = None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -72,6 +74,21 @@ class Server:
         finally:
             for listener in self._listeners:
                 listener.stop()
+            if self._pack is not None:
+                try:
+                    self._pack.close()
+                except Exception:
+                    pass
+
+    def _ensure_pack(self):
+        """Load the domain once and reuse it: spawning Chrome per message is slow."""
+        if self._pack is None:
+            try:
+                self._pack = domain.load(self._config.domain, headless=True)
+            except Exception as exc:
+                print(f"[server] domain load failed: {exc}", file=sys.stderr, flush=True)
+                return None
+        return self._pack
 
     def drain_once(self) -> int:
         """Poll every listener once, then handle what arrived."""
@@ -98,6 +115,11 @@ class Server:
             return ""
 
         memory = self._restore_memory(event)
+        pack = self._ensure_pack()
+        if pack is None:
+            answer = "域装配失败，暂时无法处理。"
+            self._reply(event, answer)
+            return answer
         observers = (
             [TurnPersister(self._store, event.session_id)]
             if self._config.persist
@@ -116,6 +138,7 @@ class Server:
                     allow_dangerous=self._config.allow_dangerous,
                     memory=memory,
                     observers=observers,
+                    pack=pack,
                     on_event=self._trace,
                 )
             )
