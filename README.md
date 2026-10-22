@@ -239,6 +239,24 @@ python -m fish.server --channels qq
 - 回复 **取消授权**：立即收回
 - 启动时加 `--allow-dangerous` 可对所有会话常开（不推荐）
 
+### 企业微信（群聊 + 单聊）
+
+官方智能机器人的 **WebSocket 长连接**模式，不需要公网回调地址。后台：应用管理 → 智能机器人 → 开启 API 模式 → 选「长连接」→ 拿 BotID + Secret。
+
+```
+FISH_WECOM_BOT_ID=...
+FISH_WECOM_SECRET=...
+```
+
+```bash
+python -m fish.server --channels popo,qq,wechat,wecom
+```
+
+- 单聊、群聊（@机器人）都支持；`session_id` 用 `chatid`（群）或 `userid`（单聊）
+- 回复用 `aibot_respond_msg`（引用来入站 `req_id`，24 小时窗口），无需用户再次触发
+- 每个机器人同时只能有 **一个** 长连接，新连接会踢掉旧连接
+- 30 秒心跳；断线需重启（重连逻辑待补）
+
 ## 定时任务
 
 `fish/scheduler.py` 只是一个外层轮询器：到点的 job 跑**一次有界 episode**，然后把结果推给你。agent 循环本身没有"永不停止"模式。

@@ -25,6 +25,7 @@ from .memory import WindowMemory
 from .notify import PopoNotifyTool
 from .qq import QQChannel, QQListener, QQNotifyTool
 from .wechat import WeChatChannel, WeChatListener, WeChatNotifyTool
+from .wecom import WeComChannel, WeComListener, WeComNotifyTool
 from .runtime import EpisodeConfig, run_episode
 from .session_store import SessionStore, TurnPersister
 from .store import JsonFactStore
@@ -69,11 +70,13 @@ class Server:
         listeners: Iterable[Listener],
         qq_channel: QQChannel | None = None,
         wechat_channel: WeChatChannel | None = None,
+        wecom_channel: WeComChannel | None = None,
     ) -> None:
         self._config = config
         self._listeners = list(listeners)
         self._qq = qq_channel
         self._wechat = wechat_channel
+        self._wecom = wecom_channel
         self._queue: queue.Queue[Event] = queue.Queue()
         self._store = SessionStore(
             config.sessions_dir or (ROOT / ".fish" / "sessions"),
@@ -303,6 +306,17 @@ class Server:
             )
             print(f"[server] -> {observation.content}", flush=True)
             return
+        if event.channel == "wecom":
+            if self._wecom is None:
+                print("[server] wecom channel is not configured", file=sys.stderr)
+                return
+            tool = WeComNotifyTool(self._wecom)
+            observation = tool.run(
+                {"title": "MahoFish", "text": text[:20000], "to": event.target},
+                ToolContext(step=0),
+            )
+            print(f"[server] -> {observation.content}", flush=True)
+            return
         print(f"[server] -> {event.channel}:{event.target}\n{text}", flush=True)
 
     def _trace(self, step: int, kind: str, text: str) -> None:
@@ -368,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--channels",
         default="popo",
-        help="comma separated listeners: popo,qq,wechat",
+        help="comma separated listeners: popo,qq,wechat,wecom",
     )
     parser.add_argument("--session", default="13e43356@app.robot.popo.com")
     parser.add_argument("--self", default="", help="your POPO uid (auto-detected)")
@@ -398,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     listeners: list[Listener] = []
     qq_channel: QQChannel | None = None
     wechat_channel: WeChatChannel | None = None
+    wecom_channel: WeComChannel | None = None
     self_uid = args.self or current_user()
 
     if "popo" in names:
@@ -430,6 +445,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         listeners.append(WeChatListener(wechat_channel))
+    if "wecom" in names:
+        wecom_channel = WeComChannel()
+        if not wecom_channel.configured:
+            print(
+                "[server] set FISH_WECOM_BOT_ID and FISH_WECOM_SECRET to enable wecom",
+                file=sys.stderr,
+            )
+            return 2
+        listeners.append(WeComListener(wecom_channel))
     if not listeners:
         print(f"[server] no listener enabled for {args.channels!r}", file=sys.stderr)
         return 2
@@ -449,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
         listeners,
         qq_channel=qq_channel,
         wechat_channel=wechat_channel,
+        wecom_channel=wecom_channel,
     )
     print(
         f"[server] channels={names} self={self_uid or '-'} session={args.session} "

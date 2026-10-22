@@ -1,3 +1,5 @@
 # Runtime dependencies (Python 3.10+).
 # The core agent uses the standard library only; these cover optional channels.
 qq-botpy>=1.2.1        # QQ official bot channel (WebSocket gateway)
+qrcode>=8.2            # render the WeChat login QR code as a PNG
+websockets>=12         # 企业微信 smart-robot long connection

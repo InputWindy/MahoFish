@@ -710,6 +710,45 @@ def run_wechat_case() -> None:
     print("[wechat] state/model/notify contract OK (no network)")
 
 
+class FakeWeCom:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    def send(self, session: str, text: str) -> str:
+        self.sent.append((session, text))
+        return f"wecom:{session}"
+
+
+def run_wecom_case() -> None:
+    from fish.wecom import WeComNotifyTool, parse_callback
+
+    message = {
+        "cmd": "aibot_msg_callback",
+        "headers": {"req_id": "r1"},
+        "body": {
+            "msgid": "m1",
+            "chattype": "group",
+            "chatid": "chat-1",
+            "from": {"userid": "u1"},
+            "msgtype": "text",
+            "text": {"content": "@bot hi"},
+        },
+    }
+    parsed = parse_callback(message)
+    assert parsed is not None, parsed
+    assert parsed["session"] == "chat-1" and parsed["chat_type"] == "group"
+    assert parsed["req_id"] == "r1", parsed
+    assert parse_callback({"cmd": "ping"}) is None
+
+    fake = FakeWeCom()
+    tool = WeComNotifyTool(fake)  # type: ignore[arg-type]
+    assert tool.spec.name == "notify_wecom" and tool.spec.dangerous
+    ok = tool.run({"title": "t", "text": "hello", "to": "chat-1"}, ToolContext(step=1))
+    assert ok.ok and fake.sent == [("chat-1", "hello")], fake.sent
+    assert not tool.run({"title": "t", "text": "x", "to": ""}, ToolContext(step=1)).ok
+    print("[wecom] callback parsing + notify contract OK (no network)")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -886,6 +925,7 @@ def main() -> int:
     run_search_case()
     run_approval_case()
     run_wechat_case()
+    run_wecom_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()
