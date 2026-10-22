@@ -60,6 +60,11 @@ def evaluate(answer: str, checks: list[dict]) -> tuple[bool, str]:
             found = len(re.findall(pattern, text))
             if found < int(value):
                 return False, f"matched {found} item(s), expected >= {value}"
+        elif kind == "min_lines":
+            pattern = str(check.get("pattern") or r".")
+            found = sum(1 for line in text.splitlines() if re.search(pattern, line))
+            if found < int(value):
+                return False, f"only {found} matching line(s), expected >= {value}"
         elif kind == "not_contains":
             if str(value) in text:
                 return False, f"should not contain {value!r}"
@@ -83,6 +88,9 @@ def run_task(task: dict, llm) -> dict:
         registry = pack.registry()
         specs = registry.specs()
         budget = task.get("budget", {})
+        goal = str(task["goal"])
+        if task.get("format") == "numbered_list":
+            goal += "\n\n输出格式：编号列表，每行一条（1. ...），不要用表格。"
         policy = StaticPolicy(
             allow={spec.name for spec in specs},
             allow_dangerous=bool(budget.get("allow_dangerous", False)),
@@ -91,7 +99,7 @@ def run_task(task: dict, llm) -> dict:
             deadline_seconds=float(budget.get("max_seconds", 180)),
         )
         memory = WindowMemory(
-            goal=task["goal"],
+            goal=goal,
             scope=pack.scope_for(task["goal"]),
             facts=JsonFactStore(ROOT / ".fish" / "facts.json"),
         )

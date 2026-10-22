@@ -213,13 +213,14 @@ python -m fish.server --channels qq
 - 群里只有 **@机器人** 会触发；私聊直接发即可
 - botpy 走 WebSocket 网关，**不需要公网回调地址**
 
-### 搜索能力（web_search / web_fetch）
+### 搜索能力（web_search / web_fetch，可选）
 
-无需额外 API key：复用你本机 `~/.codemaker/mcps.json` 里已配置的搜索 MCP 服务（streamable HTTP）。
+需要网关凭证 **`FISH_SEARCH_MCP_TOKEN`**（对应请求头 `X-Access-Token`）。CodeMaker 宿主会自己注入该 token，独立进程无法复用，所以：
 
-- 服务启动时自动挂载 `web_search` / `web_fetch`
-- 关闭：`--no-search`
-- 换服务：`FISH_SEARCH_MCP_URL` + `FISH_SEARCH_MCP_HEADERS`（JSON）
+- 没配 token → 服务启动时自动跳过 `search` 域（日志会提示），不影响其它能力
+- 配了 token → 自动挂载 `web_search` / `web_fetch`
+- 服务地址默认读 `~/.codemaker/mcps.json` 的 `Websearch MCP Server`，可用 `FISH_SEARCH_MCP_URL` 覆盖
+- `--no-search` 可显式关闭
 
 ### 危险动作授权
 
@@ -359,7 +360,7 @@ job 里写 `"notify": ["file:.fish/reports", "console", "popo"]` 即可多渠道
 }
 ```
 
-判分类型：`contains` / `regex` / `equals` / `min_items`（按 pattern 计数）/ `not_contains`。
+判分类型：`contains` / `regex` / `equals` / `min_items`（按 pattern 计数）/ `min_lines`（按行计数）/ `not_contains`。
 
 ```bash
 python eval/run_tasks.py                          # 全部，deepseek

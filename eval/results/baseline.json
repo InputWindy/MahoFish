@@ -5,9 +5,9 @@
       "id": "arith",
       "passed": true,
       "steps": 1,
-      "tokens": 273,
+      "tokens": 284,
       "faults": 0,
-      "seconds": 0.9,
+      "seconds": 0.8,
       "note": "final",
       "answer": "391"
     },
@@ -15,9 +15,9 @@
       "id": "json_only",
       "passed": true,
       "steps": 1,
-      "tokens": 276,
+      "tokens": 285,
       "faults": 0,
-      "seconds": 0.8,
+      "seconds": 0.7,
       "note": "final",
       "answer": "{\"ok\": true}"
     },
@@ -25,29 +25,69 @@
       "id": "explain_loop",
       "passed": true,
       "steps": 1,
-      "tokens": 296,
+      "tokens": 307,
       "faults": 0,
       "seconds": 0.8,
       "note": "final",
-      "answer": "Agent 循环是指智能体反复执行“观察环境→思考决策→采取行动→获取反馈”这一过程，直到任务完成或达到终止条件。"
+      "answer": "Agent 循环是指智能体反复执行“观察环境→思考决策→采取行动→获取反馈”这一过程，直到任务完成或达到停止条件。"
     },
     {
       "id": "no_tools_direct",
       "passed": true,
       "steps": 1,
-      "tokens": 281,
+      "tokens": 290,
       "faults": 0,
       "seconds": 0.7,
       "note": "final",
       "answer": "1 + 1 等于 2。"
     },
     {
+      "id": "arith2",
+      "passed": true,
+      "steps": 1,
+      "tokens": 293,
+      "faults": 0,
+      "seconds": 0.8,
+      "note": "final",
+      "answer": "893"
+    },
+    {
+      "id": "translate",
+      "passed": true,
+      "steps": 1,
+      "tokens": 287,
+      "faults": 0,
+      "seconds": 1.1,
+      "note": "final",
+      "answer": "你好，世界"
+    },
+    {
+      "id": "json_extract",
+      "passed": true,
+      "steps": 1,
+      "tokens": 303,
+      "faults": 0,
+      "seconds": 1.0,
+      "note": "final",
+      "answer": "{\"name\": \"maho\", \"version\": 1}"
+    },
+    {
+      "id": "summarize",
+      "passed": true,
+      "steps": 1,
+      "tokens": 301,
+      "faults": 0,
+      "seconds": 1.0,
+      "note": "final",
+      "answer": "MahoFish：多IM通道驱动浏览器的agent"
+    },
+    {
       "id": "page_title",
       "passed": true,
       "steps": 2,
-      "tokens": 1351,
+      "tokens": 1407,
       "faults": 0,
-      "seconds": 5.9,
+      "seconds": 5.0,
       "note": "final",
       "answer": "页面标题是：Example Domain"
     },
@@ -55,31 +95,111 @@
       "id": "example_links",
       "passed": true,
       "steps": 3,
-      "tokens": 2123,
+      "tokens": 2200,
       "faults": 0,
-      "seconds": 7.5,
+      "seconds": 6.1,
       "note": "final",
       "answer": "1"
     },
     {
-      "id": "bili_top5",
+      "id": "page_title_org",
       "passed": true,
-      "steps": 6,
-      "tokens": 6897,
+      "steps": 2,
+      "tokens": 1404,
       "faults": 0,
-      "seconds": 12.7,
+      "seconds": 5.1,
       "note": "final",
-      "answer": "B站首页推荐前5个视频：\n1. 逃离城市，白天鞣制鹿皮夜晚炖肉汤躲进石头安全屋取暖，开始迎接漫长而寒冷野外生活 —— 120.6万\n2. 矿井内1600米下起血雨，人类历史最严重电梯灾难 —— 7.8万\n3. 新王将至，旧王永垂不朽 ︳【侠盗猎车手V】终极鉴赏2026 (Leya蕾雅) ︳GTAV —— 128.3万\n4. 挑战给路人发意义不明海报！！！ —— 96.6万\n5. 阿根廷《 烧 烤 大 王 》用百年围院做个牛排烤肉店！店长日记 —— 9.7万"
+      "answer": "页面标题是：Example Domain"
+    },
+    {
+      "id": "example_org_links",
+      "passed": true,
+      "steps": 3,
+      "tokens": 2208,
+      "faults": 0,
+      "seconds": 6.7,
+      "note": "final",
+      "answer": "1"
+    },
+    {
+      "id": "httpbin_json",
+      "passed": true,
+      "steps": 3,
+      "tokens": 2359,
+      "faults": 0,
+      "seconds": 8.4,
+      "note": "final",
+      "answer": "Sample Slide Show"
+    },
+    {
+      "id": "httpbin_ip",
+      "passed": true,
+      "steps": 3,
+      "tokens": 2223,
+      "faults": 0,
+      "seconds": 7.3,
+      "note": "final",
+      "answer": "origin: 103.135.240.94"
+    },
+    {
+      "id": "wiki_python",
+      "passed": true,
+      "steps": 2,
+      "tokens": 1440,
+      "faults": 0,
+      "seconds": 5.6,
+      "note": "final",
+      "answer": "Python - 维基百科，自由的百科全书"
+    },
+    {
+      "id": "search_openai",
+      "passed": true,
+      "steps": 3,
+      "tokens": 1734,
+      "faults": 0,
+      "seconds": 3.7,
+      "note": "final",
+      "answer": "无法完成搜索：web_search 与 web_fetch 均返回「缺少 X-Access-Token（必传）」错误，说明当前环境未配置访问令牌，因此无法获取关于 OpenAI 的任何搜索结果，也就无法概括最相关的一条。"
+    },
+    {
+      "id": "search_page_title",
+      "passed": false,
+      "steps": 3,
+      "tokens": 1764,
+      "faults": 0,
+      "seconds": 3.8,
+      "note": "missing 'Example Domain'",
+      "answer": "抱歉，我无法抓取 https://example.com 的内容：web_fetch 和 web_search 两个工具都返回错误「缺少 X-Access-Token（必传）」，说明当前环境未配置访问网关所需的令牌。因此我无法获取该页面的标题。请配置 X-Access-Token 后重试，或直接告知我页面内容，我可以帮你提取标题。"
+    },
+    {
+      "id": "bili_top5",
+      "passed": false,
+      "steps": 8,
+      "tokens": 10746,
+      "faults": 0,
+      "seconds": 15.9,
+      "note": "only 0 matching line(s), expected >= 5",
+      "answer": "Stopped: step budget exhausted (8)"
     },
     {
       "id": "bili_ads",
       "passed": true,
+      "steps": 6,
+      "tokens": 7378,
+      "faults": 0,
+      "seconds": 12.3,
+      "note": "final",
+      "answer": "没有。证据：对 https://www.bilibili.com 首页执行脚本检查，document.body.innerText 中 '人感兴趣' 出现次数为 0（found:false, count:0）；页面全文长度约 809 字符，内容为导航栏、登录提示、视频推荐列表等，无广告卡片文案；对 23 个 class 含 'ad' 的元素逐一检查 innerText，均不含'人感兴趣'（hits:[]），且不存在 .ad-card/.bili-ad 等广告卡片容器。"
+    },
+    {
+      "id": "bili_top3",
+      "passed": true,
       "steps": 3,
-      "tokens": 2493,
+      "tokens": 2454,
       "faults": 0,
       "seconds": 8.2,
       "note": "final",
-      "answer": "有。首页存在广告卡片，证据：页面文本中出现“广告\nAI工具一键搞定视频，再也不用熬夜剪辑了\n1万人感兴趣”，其中包含“人感兴趣”字样，且标注为“广告”。"
+      "answer": "B站首页推荐的前 3 个视频标题：\n1. “终于明白为什么反派会因为一首歌而愣住…”\n2. 关于菲欧妮战场 EAA不知道A到 第几下问题简解\n3. 《AIZO》司凤版😍乙骨听完整个人都通透了，轻松新宿一串二【AI音乐】"
     }
   ]
 }

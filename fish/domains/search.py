@@ -22,10 +22,13 @@ SERVER_NAME = "Websearch MCP Server"
 def default_client() -> HttpMCPClient:
     url = os.environ.get("FISH_SEARCH_MCP_URL", "").strip()
     headers: dict[str, str] = {}
+    token = os.environ.get("FISH_SEARCH_MCP_TOKEN", "").strip()
+    if token:
+        headers["X-Access-Token"] = token
     raw_headers = os.environ.get("FISH_SEARCH_MCP_HEADERS", "").strip()
     if raw_headers:
         try:
-            headers = {str(k): str(v) for k, v in json.loads(raw_headers).items()}
+            headers.update({str(k): str(v) for k, v in json.loads(raw_headers).items()})
         except json.JSONDecodeError as exc:
             raise DomainError(f"FISH_SEARCH_MCP_HEADERS is not JSON: {exc}") from exc
     if not url:
@@ -35,8 +38,12 @@ def default_client() -> HttpMCPClient:
                 f"no search MCP server: set FISH_SEARCH_MCP_URL or configure "
                 f"{SERVER_NAME!r} in ~/.codemaker/mcps.json"
             )
-        url, config_headers = found
-        headers = headers or config_headers
+        url, _ = found
+    if not headers:
+        raise DomainError(
+            "search MCP needs credentials: set FISH_SEARCH_MCP_TOKEN "
+            "(the host-injected X-Access-Token cannot be reused)"
+        )
     return HttpMCPClient(url, headers)
 
 

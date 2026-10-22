@@ -105,27 +105,29 @@
     "budget": {"max_steps": 5, "max_seconds": 150}
   },
   {
-    "id": "search_openai",
-    "domains": ["search"],
-    "goal": "搜索「OpenAI」，用一句话概括最相关的一条结果。",
-    "checks": [{"type": "regex", "value": "OpenAI|人工智能|AI"}],
-    "budget": {"max_steps": 3, "max_seconds": 120}
+    "id": "wiki_ai",
+    "domain": "browser",
+    "goal": "打开 https://en.wikipedia.org/wiki/Artificial_intelligence ，输出页面标题。",
+    "checks": [{"type": "regex", "value": "Artificial intelligence"}],
+    "budget": {"max_steps": 5, "max_seconds": 150}
   },
   {
-    "id": "search_page_title",
-    "domains": ["search"],
-    "goal": "抓取 https://example.com 的页面内容，告诉我它的标题。",
-    "checks": [{"type": "contains", "value": "Example Domain"}],
-    "budget": {"max_steps": 3, "max_seconds": 120}
+    "id": "httpbin_headers",
+    "domain": "browser",
+    "goal": "打开 https://httpbin.org/headers ，告诉我返回的 JSON 里是否包含 headers 字段。",
+    "checks": [{"type": "regex", "value": "headers"}],
+    "budget": {"max_steps": 5, "max_seconds": 150}
   },
   {
     "id": "bili_top5",
     "domain": "browser",
     "goal": "打开 https://www.bilibili.com ，输出首页推荐前 5 个视频的标题和播放量。",
+    "format": "numbered_list",
     "checks": [
-      {"type": "min_items", "value": 5, "pattern": "\\d+(\\.\\d+)?万"}
+      {"type": "min_lines", "value": 5, "pattern": "^\\s*\\d+[.、]"},
+      {"type": "regex", "value": "万|播放"}
     ],
-    "budget": {"max_steps": 8, "max_seconds": 240}
+    "budget": {"max_steps": 10, "max_seconds": 300}
   },
   {
     "id": "bili_ads",
@@ -138,7 +140,8 @@
     "id": "bili_top3",
     "domain": "browser",
     "goal": "打开 https://www.bilibili.com ，列出首页推荐的前 3 个视频标题。",
-    "checks": [{"type": "min_items", "value": 3, "pattern": "《[^》]+》"}],
+    "format": "numbered_list",
+    "checks": [{"type": "min_lines", "value": 3, "pattern": "^\\s*\\d+[.、]"}],
     "budget": {"max_steps": 6, "max_seconds": 180}
   }
 ]

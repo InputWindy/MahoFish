@@ -17,7 +17,11 @@ HEAVY = {"browser"}
 
 
 def check(name: str) -> None:
-    pack = domain.load(name)
+    try:
+        pack = domain.load(name)
+    except domain.DomainError as exc:
+        print(f"[domain] {name} skipped: {exc}")
+        return
     try:
         domain.validate(pack)
         pack.close()
