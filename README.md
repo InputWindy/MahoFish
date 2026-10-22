@@ -251,6 +251,17 @@ python -m fish.server --channels popo,qq,wechat,wecom
 - 每个机器人同时只能有 **一个** 长连接，新连接会踢掉旧连接
 - 30 秒心跳；断线需重启（重连逻辑待补）
 
+### 常驻与日志（推荐用守护器）
+
+```bash
+python -m fish.serve --channels popo,qq,wechat,wecom --backend deepseek
+# 或双击 serve.bat
+```
+
+- 子进程退出后自动重启（5s 起，最大 60s 退避）
+- 日志按大小轮转：`.fish/server.log`，默认 5MB × 5 份（`--max-mb` / `--backups`）
+- Ctrl+C 会先终止子进程再退出，不留孤儿
+
 ## 定时任务
 
 `fish/scheduler.py` 只是一个外层轮询器：到点的 job 跑**一次有界 episode**，然后把结果推给你。agent 循环本身没有"永不停止"模式。
@@ -335,7 +346,7 @@ job 里写 `"notify": ["file:.fish/reports", "console", "popo"]` 即可多渠道
 
 ## 回归集
 
-`eval/tasks.json` 定义固定任务，`eval/run_tasks.py` 批量跑并与 `eval/results/baseline.json` 对比（基线进版本库，`latest.json` 忽略）。
+`eval/tasks.json` 定义固定任务（当前 **20 条**：8 条 core、10 条浏览器、2 条搜索），`eval/run_tasks.py` 批量跑并与 `eval/results/baseline.json` 对比（基线进版本库，`latest.json` 忽略）。任务可以用 `domains: ["browser", "search"]` 组合多个域。
 
 ```json
 {

@@ -28,6 +28,34 @@
     "budget": {"max_steps": 2, "max_seconds": 60}
   },
   {
+    "id": "arith2",
+    "domain": "none",
+    "goal": "47 * 19 等于多少？只回答数字。",
+    "checks": [{"type": "contains", "value": "893"}],
+    "budget": {"max_steps": 2, "max_seconds": 60}
+  },
+  {
+    "id": "translate",
+    "domain": "none",
+    "goal": "把 \"hello world\" 翻译成中文，只输出译文。",
+    "checks": [{"type": "regex", "value": "你好|世界"}],
+    "budget": {"max_steps": 2, "max_seconds": 60}
+  },
+  {
+    "id": "json_extract",
+    "domain": "none",
+    "goal": "只输出一个 JSON：{\"name\": \"maho\", \"version\": 1}",
+    "checks": [{"type": "regex", "value": "\"name\"\\s*:\\s*\"maho\""}],
+    "budget": {"max_steps": 2, "max_seconds": 60}
+  },
+  {
+    "id": "summarize",
+    "domain": "none",
+    "goal": "用不超过 20 字概括：MahoFish 是一个能通过多种 IM 通道驱动浏览器的 agent。",
+    "checks": [{"type": "regex", "value": "MahoFish|agent|智能体|IM"}],
+    "budget": {"max_steps": 2, "max_seconds": 60}
+  },
+  {
     "id": "page_title",
     "domain": "browser",
     "goal": "打开 https://example.com ，输出页面标题。",
@@ -40,6 +68,55 @@
     "goal": "打开 https://example.com ，统计页面里 <a> 链接的数量，只输出数字。",
     "checks": [{"type": "regex", "value": "\\b1\\b"}],
     "budget": {"max_steps": 4, "max_seconds": 120}
+  },
+  {
+    "id": "page_title_org",
+    "domain": "browser",
+    "goal": "打开 https://example.org ，输出页面标题。",
+    "checks": [{"type": "contains", "value": "Example Domain"}],
+    "budget": {"max_steps": 4, "max_seconds": 120}
+  },
+  {
+    "id": "example_org_links",
+    "domain": "browser",
+    "goal": "打开 https://example.org ，统计页面里 <a> 链接的数量，只输出数字。",
+    "checks": [{"type": "regex", "value": "\\b1\\b"}],
+    "budget": {"max_steps": 4, "max_seconds": 120}
+  },
+  {
+    "id": "httpbin_json",
+    "domain": "browser",
+    "goal": "打开 https://httpbin.org/json ，输出 slideshow 字段下的 title。",
+    "checks": [{"type": "regex", "value": "slideshow|Sample Slide Show"}],
+    "budget": {"max_steps": 5, "max_seconds": 150}
+  },
+  {
+    "id": "httpbin_ip",
+    "domain": "browser",
+    "goal": "打开 https://httpbin.org/ip ，输出 origin 字段。",
+    "checks": [{"type": "regex", "value": "\\d+\\.\\d+\\.\\d+\\.\\d+"}],
+    "budget": {"max_steps": 5, "max_seconds": 150}
+  },
+  {
+    "id": "wiki_python",
+    "domain": "browser",
+    "goal": "打开 https://zh.wikipedia.org/wiki/Python ，输出页面标题。",
+    "checks": [{"type": "contains", "value": "Python"}],
+    "budget": {"max_steps": 5, "max_seconds": 150}
+  },
+  {
+    "id": "search_openai",
+    "domains": ["search"],
+    "goal": "搜索「OpenAI」，用一句话概括最相关的一条结果。",
+    "checks": [{"type": "regex", "value": "OpenAI|人工智能|AI"}],
+    "budget": {"max_steps": 3, "max_seconds": 120}
+  },
+  {
+    "id": "search_page_title",
+    "domains": ["search"],
+    "goal": "抓取 https://example.com 的页面内容，告诉我它的标题。",
+    "checks": [{"type": "contains", "value": "Example Domain"}],
+    "budget": {"max_steps": 3, "max_seconds": 120}
   },
   {
     "id": "bili_top5",
@@ -55,6 +132,13 @@
     "domain": "browser",
     "goal": "打开 https://www.bilibili.com ，判断首页是否存在广告卡片（带'人感兴趣'字样），回答“有”或“没有”并给出证据。",
     "checks": [{"type": "regex", "value": "有|没有"}],
+    "budget": {"max_steps": 6, "max_seconds": 180}
+  },
+  {
+    "id": "bili_top3",
+    "domain": "browser",
+    "goal": "打开 https://www.bilibili.com ，列出首页推荐的前 3 个视频标题。",
+    "checks": [{"type": "min_items", "value": 3, "pattern": "《[^》]+》"}],
     "budget": {"max_steps": 6, "max_seconds": 180}
   }
 ]

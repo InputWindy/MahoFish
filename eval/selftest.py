@@ -749,6 +749,21 @@ def run_wecom_case() -> None:
     print("[wecom] callback parsing + notify contract OK (no network)")
 
 
+def run_log_rotation_case() -> None:
+    from fish.serve import RotatingLog
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "server.log"
+        log = RotatingLog(path, max_bytes=300, backups=2)
+        for index in range(40):
+            log.write(f"line {index} " + "x" * 30)
+        log.close()
+        assert path.is_file(), "current log missing"
+        assert path.with_name("server.log.1").is_file(), "no .1 backup"
+        assert not path.with_name("server.log.3").exists(), "backups must be capped"
+    print("[log] rotation keeps bounded files")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -926,6 +941,7 @@ def main() -> int:
     run_approval_case()
     run_wechat_case()
     run_wecom_case()
+    run_log_rotation_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()

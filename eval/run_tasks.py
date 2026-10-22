@@ -74,7 +74,12 @@ def run_task(task: dict, llm) -> dict:
     record = {"id": task["id"], "passed": False, "steps": 0, "tokens": 0,
               "faults": 0, "seconds": 0.0, "note": ""}
     try:
-        pack = domain.load(task.get("domain", "none"), **task.get("domain_options", {}))
+        domains = task.get("domains") or [task.get("domain", "none")]
+        packs = [
+            domain.load(str(name), **task.get("domain_options", {}))
+            for name in domains
+        ]
+        pack = packs[0] if len(packs) == 1 else domain.CompositeDomain(packs)
         registry = pack.registry()
         specs = registry.specs()
         budget = task.get("budget", {})
