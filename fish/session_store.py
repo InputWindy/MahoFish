@@ -27,6 +27,7 @@ class Snapshot:
     summary: str = ""
     folded: int = 0
     turns: list[Turn] = field(default_factory=list)
+    checkpoint: dict[str, str] | None = None
 
 
 def _now() -> str:
@@ -109,6 +110,20 @@ class SessionStore:
             session_id, {"t": "compact", "folded": int(folded), "summary": summary}
         )
 
+    def append_checkpoint(
+        self, session_id: str, stop: str, progress: str, next_step: str
+    ) -> None:
+        self._append(
+            session_id,
+            {
+                "t": "checkpoint",
+                "stop": stop,
+                "progress": progress,
+                "next": next_step,
+                "updated": _now(),
+            },
+        )
+
     def set_goal(self, session_id: str, goal: str) -> None:
         self._append(session_id, {"t": "meta", "goal": goal, "updated": _now()})
 
@@ -140,6 +155,12 @@ class SessionStore:
                     snapshot.folded = int(row.get("folded", 0))
                 except (TypeError, ValueError):
                     snapshot.folded = 0
+            elif kind == "checkpoint":
+                snapshot.checkpoint = {
+                    "stop": str(row.get("stop", "")),
+                    "progress": str(row.get("progress", "")),
+                    "next": str(row.get("next", "")),
+                }
             elif kind == "turn":
                 turn = turn_from_dict(row)
                 if turn is not None:

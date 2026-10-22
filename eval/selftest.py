@@ -30,6 +30,8 @@ from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool, PopoNotifyT
 from fish.notify import popo_helper_command
 from fish.store import Fact, JsonFactStore
 from fish.session_store import SessionStore
+from fish.listeners import Event
+from fish.server import Server, ServerConfig, _friendly_stop, _split_checkpoint
 from fish import domain as domain_mod
 from fish.domain import DomainCapabilities, DomainError, DomainPack, validate
 from fish.policy import StaticPolicy
@@ -445,6 +447,38 @@ def run_session_case() -> None:
     print("[session] persist -> restore -> new goal, torn line tolerated")
 
 
+def run_checkpoint_case() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = SessionStore(tmp)
+        sid = "session-cp"
+        store.append_checkpoint(
+            sid, "step budget exhausted (8)", "已打开搜索页", "打开第一个结果"
+        )
+        snapshot = store.load(sid)
+        assert snapshot.checkpoint is not None, snapshot
+        assert snapshot.checkpoint["next"] == "打开第一个结果", snapshot.checkpoint
+
+        progress, next_step = _split_checkpoint("PROGRESS: done A\nNEXT: do B")
+        assert progress == "done A" and next_step == "do B", (progress, next_step)
+
+        message = _friendly_stop("step budget exhausted (8)", "PROGRESS: x\nNEXT: y")
+        assert "步数预算" in message and "继续" in message, message
+        assert _friendly_stop("llm error: boom", "").startswith("模型暂时不可用")
+
+        server = Server(ServerConfig(persist=False), [])
+        goal, continuing = server._resolve_goal(
+            Event("popo", "s", "继续", "me"), snapshot
+        )
+        assert continuing, "continue keyword must resume"
+        assert "已打开搜索页" in goal, goal
+
+        goal, continuing = server._resolve_goal(
+            Event("popo", "s", "帮我查天气", "me"), snapshot
+        )
+        assert not continuing and goal == "帮我查天气", goal
+    print("[checkpoint] persist / split / friendly stop / continue detection OK")
+
+
 def run_compact_case() -> None:
     memory = WindowMemory(goal="compress test", config=MemoryConfig(keep_turns=3))
     for step in range(1, 8):
@@ -568,6 +602,7 @@ def main() -> int:
     run_contract_violation_cases()
     run_notify_case()
     run_session_case()
+    run_checkpoint_case()
     run_compact_case()
     run_store_case()
 

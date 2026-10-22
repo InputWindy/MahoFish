@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from . import domain
 from .agent import Agent
-from .contracts import Memory, RunResult, TurnObserver
+from .contracts import Memory, Message, Role, RunResult, TurnObserver
 from .llm import build_llm
 from .memory import WindowMemory
 from .policy import StaticPolicy
@@ -37,6 +37,8 @@ class EpisodeConfig:
     memory: Memory | None = None
     observers: list[TurnObserver] | None = None
     pack: Any | None = None
+    checkpoint: bool = False
+    on_checkpoint: Callable[[str, str], None] | None = None
     on_event: Callable[[int, str, str], None] | None = None
     on_tools: Callable[[str, list[str]], None] | None = None
     on_llm: Callable[[str, str], None] | None = None
@@ -82,7 +84,16 @@ def run_episode(config: EpisodeConfig) -> RunResult:
             f"model={getattr(llm, 'model', '?')}",
             max_llm_retries=config.max_llm_retries,
         )
-        return agent.run()
+        result = agent.run()
+        if (
+            config.checkpoint
+            and result.stopped_reason != "final"
+            and config.on_checkpoint is not None
+        ):
+            text = _checkpoint_text(llm, memory, result.stopped_reason)
+            if text:
+                config.on_checkpoint(result.stopped_reason, text)
+        return result
     finally:
         if pack is not None and not borrowed:
             try:
@@ -92,6 +103,36 @@ def run_episode(config: EpisodeConfig) -> RunResult:
         close = getattr(llm, "close", None)
         if callable(close):
             close()
+
+
+CHECKPOINT_PROMPT = """\
+The attempt stopped before finishing: {reason}
+Write at most 3 lines for your future self, no preamble:
+PROGRESS: what is done and which data is already collected
+NEXT: the single next action
+
+CONTEXT:
+{context}
+"""
+
+
+def _checkpoint_text(llm, memory: Memory, reason: str) -> str:
+    """One extra call, only when an episode stops early."""
+    try:
+        view = memory.view(3000)[0].content
+        reply = llm.complete(
+            [
+                Message(
+                    role=Role.USER,
+                    content=CHECKPOINT_PROMPT.format(
+                        reason=reason, context=view[-4000:]
+                    ),
+                )
+            ]
+        )
+    except Exception:
+        return ""
+    return reply.text.strip()
 
 
 def _safe(fn, *args, default=None):

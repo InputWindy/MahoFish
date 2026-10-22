@@ -27,13 +27,24 @@ from .store import JsonFactStore
 
 ROOT = Path(__file__).resolve().parents[1]
 _URL = re.compile(r"https?://([^/\s]+)")
+CONTINUE_WORDS = {
+    "继续",
+    "接着",
+    "接着做",
+    "继续做",
+    "继续吧",
+    "continue",
+    "cont",
+    "go on",
+    "keep going",
+}
 
 
 @dataclass
 class ServerConfig:
     domain: str = "browser"
     backend: str = "deepseek"
-    max_steps: int = 8
+    max_steps: int = 12
     timeout: float = 300.0
     allow_dangerous: bool = False
     persist: bool = True
@@ -114,21 +125,37 @@ class Server:
             print("[server] dry-run: no episode, no reply", flush=True)
             return ""
 
-        memory = self._restore_memory(event)
+        snapshot = self._store.load(event.session_id, keep_turns=8)
+        goal, continuing = self._resolve_goal(event, snapshot)
+        if continuing:
+            print("[server] continue: resuming from checkpoint", flush=True)
+
+        memory = self._restore_memory(event, snapshot, goal)
         pack = self._ensure_pack()
         if pack is None:
             answer = "域装配失败，暂时无法处理。"
             self._reply(event, answer)
             return answer
+
         observers = (
             [TurnPersister(self._store, event.session_id)]
             if self._config.persist
             else None
         )
+        captured: list[str] = []
+
+        def on_checkpoint(stop: str, text: str) -> None:
+            captured.append(text)
+            if self._config.persist:
+                progress, next_step = _split_checkpoint(text)
+                self._store.append_checkpoint(
+                    event.session_id, stop, progress, next_step
+                )
+
         try:
             result = run_episode(
                 EpisodeConfig(
-                    goal=event.text,
+                    goal=goal,
                     domain=self._config.domain,
                     domain_options={"headless": True},
                     backend=self._config.backend,
@@ -139,10 +166,17 @@ class Server:
                     memory=memory,
                     observers=observers,
                     pack=pack,
+                    checkpoint=True,
+                    on_checkpoint=on_checkpoint,
                     on_event=self._trace,
                 )
             )
-            answer = result.answer
+            if result.stopped_reason == "final":
+                answer = result.answer
+            else:
+                answer = _friendly_stop(
+                    result.stopped_reason, captured[-1] if captured else ""
+                )
         except Exception as exc:  # reply with the failure instead of dying
             answer = f"处理失败：{type(exc).__name__}: {exc}"
             print(f"[server] episode failed: {exc}", file=sys.stderr, flush=True)
@@ -154,17 +188,31 @@ class Server:
         self._reply(event, answer)
         return answer
 
-    def _restore_memory(self, event: Event) -> WindowMemory:
-        snapshot = self._store.load(event.session_id, keep_turns=8)
+    def _resolve_goal(self, event: Event, snapshot) -> tuple[str, bool]:
+        text = event.text.strip()
+        if text.lower() not in CONTINUE_WORDS:
+            return text, False
+        checkpoint = snapshot.checkpoint or {}
+        progress = checkpoint.get("progress", "")
+        next_step = checkpoint.get("next", "")
+        if progress or next_step:
+            return (
+                "继续上次未完成的任务。\n"
+                f"上次进度：{progress}\n下一步：{next_step}",
+                True,
+            )
+        return f"继续上次未完成的任务：{snapshot.goal or '（无记录）'}", True
+
+    def _restore_memory(self, event: Event, snapshot, goal: str) -> WindowMemory:
         memory = WindowMemory(
-            goal=event.text,
-            scope=_scope_of(event.text),
+            goal=goal,
+            scope=_scope_of(goal),
             facts=JsonFactStore(self._facts),
         )
         memory.seed(snapshot.summary, snapshot.turns, snapshot.folded)
-        memory.set_goal(event.text)
+        memory.set_goal(goal)
         if self._config.persist:
-            self._store.set_goal(event.session_id, event.text)
+            self._store.set_goal(event.session_id, goal)
         return memory
 
     def _reply(self, event: Event, text: str) -> None:
@@ -189,6 +237,40 @@ def _scope_of(text: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def _split_checkpoint(text: str) -> tuple[str, str]:
+    progress, next_step = "", ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper.startswith("PROGRESS:"):
+            progress = stripped.split(":", 1)[1].strip()
+        elif upper.startswith("NEXT:"):
+            next_step = stripped.split(":", 1)[1].strip()
+    if not progress and not next_step:
+        progress = text.strip()
+    return progress[:500], next_step[:300]
+
+
+def _friendly_stop(reason: str, checkpoint: str) -> str:
+    if reason.startswith("step budget"):
+        head = "这次没做完（步数预算用完）。"
+    elif reason.startswith("token budget"):
+        head = "这次没做完（token 预算用完）。"
+    elif reason.startswith("time budget"):
+        head = "这次超时中断了。"
+    elif reason.startswith("llm error"):
+        head = "模型暂时不可用，任务中断。"
+    elif reason.startswith("policy error"):
+        head = "安全策略拦截，任务中断。"
+    else:
+        head = f"任务中断（{reason}）。"
+    parts = [head]
+    if checkpoint:
+        parts.append("已保留进度：\n" + checkpoint.strip()[:800])
+    parts.append("回复「继续」我接着做。")
+    return "\n\n".join(parts)
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -200,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--since-minutes", type=float, default=0.0)
     parser.add_argument("--domain", default="browser")
     parser.add_argument("--backend", default="deepseek")
-    parser.add_argument("--max-steps", type=int, default=8)
+    parser.add_argument("--max-steps", type=int, default=12)
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--no-persist", action="store_true")
     parser.add_argument("--once", action="store_true")
