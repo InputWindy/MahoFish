@@ -5,9 +5,9 @@
       "id": "arith",
       "passed": true,
       "steps": 1,
-      "tokens": 284,
+      "tokens": 287,
       "faults": 0,
-      "seconds": 0.8,
+      "seconds": 1.0,
       "note": "final",
       "answer": "391"
     },
@@ -17,7 +17,7 @@
       "steps": 1,
       "tokens": 285,
       "faults": 0,
-      "seconds": 0.7,
+      "seconds": 1.0,
       "note": "final",
       "answer": "{\"ok\": true}"
     },
@@ -29,7 +29,7 @@
       "faults": 0,
       "seconds": 0.8,
       "note": "final",
-      "answer": "Agent 循环是指智能体反复执行“观察环境→思考决策→采取行动→获取反馈”这一过程，直到任务完成或达到停止条件。"
+      "answer": "Agent 循环是指智能体反复执行“观察环境→思考决策→采取行动→获取反馈”这一过程，直到任务完成或达到终止条件。"
     },
     {
       "id": "no_tools_direct",
@@ -37,7 +37,7 @@
       "steps": 1,
       "tokens": 290,
       "faults": 0,
-      "seconds": 0.7,
+      "seconds": 1.0,
       "note": "final",
       "answer": "1 + 1 等于 2。"
     },
@@ -45,9 +45,9 @@
       "id": "arith2",
       "passed": true,
       "steps": 1,
-      "tokens": 293,
+      "tokens": 283,
       "faults": 0,
-      "seconds": 0.8,
+      "seconds": 0.7,
       "note": "final",
       "answer": "893"
     },
@@ -67,7 +67,7 @@
       "steps": 1,
       "tokens": 303,
       "faults": 0,
-      "seconds": 1.0,
+      "seconds": 0.8,
       "note": "final",
       "answer": "{\"name\": \"maho\", \"version\": 1}"
     },
@@ -75,11 +75,11 @@
       "id": "summarize",
       "passed": true,
       "steps": 1,
-      "tokens": 301,
+      "tokens": 305,
       "faults": 0,
-      "seconds": 1.0,
+      "seconds": 1.1,
       "note": "final",
-      "answer": "MahoFish：多IM通道驱动浏览器的agent"
+      "answer": "MahoFish 是可通过多种 IM 通道驱动浏览器的 agent。"
     },
     {
       "id": "page_title",
@@ -87,7 +87,7 @@
       "steps": 2,
       "tokens": 1407,
       "faults": 0,
-      "seconds": 5.0,
+      "seconds": 5.3,
       "note": "final",
       "answer": "页面标题是：Example Domain"
     },
@@ -95,9 +95,9 @@
       "id": "example_links",
       "passed": true,
       "steps": 3,
-      "tokens": 2200,
+      "tokens": 2199,
       "faults": 0,
-      "seconds": 6.1,
+      "seconds": 6.9,
       "note": "final",
       "answer": "1"
     },
@@ -105,19 +105,19 @@
       "id": "page_title_org",
       "passed": true,
       "steps": 2,
-      "tokens": 1404,
+      "tokens": 1399,
       "faults": 0,
-      "seconds": 5.1,
+      "seconds": 4.7,
       "note": "final",
-      "answer": "页面标题是：Example Domain"
+      "answer": "Example Domain"
     },
     {
       "id": "example_org_links",
       "passed": true,
       "steps": 3,
-      "tokens": 2208,
+      "tokens": 2207,
       "faults": 0,
-      "seconds": 6.7,
+      "seconds": 6.3,
       "note": "final",
       "answer": "1"
     },
@@ -125,9 +125,9 @@
       "id": "httpbin_json",
       "passed": true,
       "steps": 3,
-      "tokens": 2359,
+      "tokens": 2357,
       "faults": 0,
-      "seconds": 8.4,
+      "seconds": 8.0,
       "note": "final",
       "answer": "Sample Slide Show"
     },
@@ -137,69 +137,69 @@
       "steps": 3,
       "tokens": 2223,
       "faults": 0,
-      "seconds": 7.3,
+      "seconds": 8.6,
       "note": "final",
-      "answer": "origin: 103.135.240.94"
+      "answer": "origin: 125.69.0.5"
     },
     {
       "id": "wiki_python",
       "passed": true,
       "steps": 2,
-      "tokens": 1440,
+      "tokens": 1441,
       "faults": 0,
-      "seconds": 5.6,
+      "seconds": 7.3,
       "note": "final",
       "answer": "Python - 维基百科，自由的百科全书"
     },
     {
-      "id": "search_openai",
+      "id": "wiki_ai",
       "passed": true,
-      "steps": 3,
-      "tokens": 1734,
+      "steps": 2,
+      "tokens": 1444,
       "faults": 0,
-      "seconds": 3.7,
+      "seconds": 7.0,
       "note": "final",
-      "answer": "无法完成搜索：web_search 与 web_fetch 均返回「缺少 X-Access-Token（必传）」错误，说明当前环境未配置访问令牌，因此无法获取关于 OpenAI 的任何搜索结果，也就无法概括最相关的一条。"
+      "answer": "Artificial intelligence - Wikipedia"
     },
     {
-      "id": "search_page_title",
-      "passed": false,
+      "id": "httpbin_headers",
+      "passed": true,
       "steps": 3,
-      "tokens": 1764,
+      "tokens": 2656,
       "faults": 0,
-      "seconds": 3.8,
-      "note": "missing 'Example Domain'",
-      "answer": "抱歉，我无法抓取 https://example.com 的内容：web_fetch 和 web_search 两个工具都返回错误「缺少 X-Access-Token（必传）」，说明当前环境未配置访问网关所需的令牌。因此我无法获取该页面的标题。请配置 X-Access-Token 后重试，或直接告知我页面内容，我可以帮你提取标题。"
+      "seconds": 8.7,
+      "note": "final",
+      "answer": "是的，返回的 JSON 中包含 headers 字段。它是一个对象，里面列出了请求头，例如 Accept、Accept-Encoding、Host、User-Agent、X-Amzn-Trace-Id 等。"
     },
     {
       "id": "bili_top5",
-      "passed": false,
-      "steps": 8,
-      "tokens": 10746,
+      "passed": true,
+      "steps": 4,
+      "tokens": 3933,
       "faults": 0,
-      "seconds": 15.9,
-      "note": "only 0 matching line(s), expected >= 5",
-      "answer": "Stopped: step budget exhausted (8)"
+      "seconds": 10.7,
+      "note": "final",
+      "answer": "1. 当《琵琶曲》遇到《琵琶行》 — 16.9万\n2. [opus5.5]一句话让claude花30亿token制作的千本樱mv — 58.3万\n3. 司凤版《朋友的酒》（空城计の小曲）“听完感觉老通透了” — 252.2万\n4. 花5W带它回国！！这是我做过最正确的决定..... — 7.2万\n5. 在西宁不听劝，3个菜1个砂锅都没吃完就撑了 — 34.2万"
     },
     {
       "id": "bili_ads",
       "passed": true,
       "steps": 6,
-      "tokens": 7378,
+      "tokens": 7139,
       "faults": 0,
-      "seconds": 12.3,
+      "seconds": 18.1,
       "note": "final",
-      "answer": "没有。证据：对 https://www.bilibili.com 首页执行脚本检查，document.body.innerText 中 '人感兴趣' 出现次数为 0（found:false, count:0）；页面全文长度约 809 字符，内容为导航栏、登录提示、视频推荐列表等，无广告卡片文案；对 23 个 class 含 'ad' 的元素逐一检查 innerText，均不含'人感兴趣'（hits:[]），且不存在 .ad-card/.bili-ad 等广告卡片容器。"
+      "answer": "有。证据：首页滚动加载后出现广告卡片，文本为“广告 一分钟解锁豆包隐藏新技能 1万人感兴趣”（含“人感兴趣”字样，且带“广告”标识）。"
     },
     {
       "id": "bili_top3",
       "passed": true,
       "steps": 3,
-      "tokens": 2454,
+      "tokens": 2536,
       "faults": 0,
-      "seconds": 8.2,
+      "seconds": 7.1,
       "note": "final",
-      "answer": "B站首页推荐的前 3 个视频标题：\n1. “终于明白为什么反派会因为一首歌而愣住…”\n2. 关于菲欧妮战场 EAA不知道A到 第几下问题简解\n3. 《AIZO》司凤版😍乙骨听完整个人都通透了，轻松新宿一串二【AI音乐】"
+      "answer": "1. “男子插满钢钉的双手，花25块就治好了，还成了＂至尊法师＂!《奇异博士》\n2. 菲欧妮COS流萤\n3. 循环歌单|【新·与天齐】|“我本该命途齐天”【异人之下の小曲】"
     }
   ]
 }
