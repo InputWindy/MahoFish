@@ -352,7 +352,7 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def build_llm(backend: str = "codemaker", model: str | None = None) -> LLMBackend:
+def build_llm(backend: str = "deepseek", model: str | None = None) -> LLMBackend:
     if backend == "codemaker":
         return CodemakerServerLLM(model=model)
     if backend == "deepseek":

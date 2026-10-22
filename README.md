@@ -17,7 +17,7 @@ LLM  ──决定调用哪个工具──▶  agent 循环  ──JSON-RPC/stdio
 
 ## 快速开始
 
-前置：Python 3.10+，Node 20+，本机装了 Chrome。默认开发后端用本机 `codemaker` 登录态，不需要 API key；只有 `--backend deepseek`（发布）才需要 key。
+前置：Python 3.10+，Node 20+，本机装了 Chrome，一个 DeepSeek API key（写入 `.env` 的 `FISH_API_KEY`）。
 
 ```bash
 setup.bat        # 一键检查环境：Python / 依赖 / .env / Node / chrome-devtools
@@ -44,35 +44,16 @@ python main.py --backend deepseek
 
 | `--backend` | 用途 | 依赖 |
 |---|---|---|
-| `codemaker`（默认） | 本地开发/自测 | 本机 `codemaker` CLI 登录态，零 key |
-| `deepseek` | 发布版 | API key（`FISH_API_KEY`） |
+| `deepseek`（默认） | 主用后端，工具调用可靠 | API key（`FISH_API_KEY`） |
+| `codemaker` | 本地开发/自测，零 key | 本机 `codemaker` CLI 登录态；**工具任务不可靠** |
 
-### codemaker（默认，开发版）
-
-```bash
-python main.py                      # 默认就是 codemaker
-python main.py --backend codemaker  # 等价写法
-```
-
-- 自动在空闲端口起 `codemaker serve`，工作目录是临时目录，跑完即关闭
-- 每次补全新建 session、用完删除，保证无状态
-- 显式关闭它自带的 `bash/read/write/edit` 等工具，只当纯模型用
-- 已有服务时设 `FISH_CODEMAKER_URL=http://127.0.0.1:4123`，不再自启
-- `--model provider/modelID` 指定模型，不填用服务端默认
-
-实测开销（单次运行）：服务冷启动 ~2.3s（只一次，不按对话算）；建/删 session ~0.05s；单次补全 1–2.5s（短 prompt）。端到端 4 步约 19s，大头是模型推理和页面上下文，不是 CLI 初始化。
-
-**限制**：codemaker 自带系统提示会描述它自己的环境（UE/MCP 工具），即使我们禁用全部工具并声明"以下清单为准"，模型仍会偶发地回答"没有浏览器工具"。因此：
-
-- `--domain none`（纯推理）→ codemaker 可用
-- 带工具的域（如 `browser`）→ 请用 `--backend deepseek`
-
-### deepseek（发布版）
+### deepseek（默认）
 
 任何 OpenAI 兼容的 `/chat/completions`，默认指向 DeepSeek。
 
 ```bash
-python main.py --backend deepseek
+python main.py                       # 默认就是 deepseek
+python main.py --backend deepseek    # 等价写法
 ```
 
 | 变量 | 默认值 | 说明 |
@@ -91,13 +72,26 @@ FISH_MODEL=qwen2.5:14b
 FISH_API_KEY=ollama          # 本地服务随便填
 ```
 
+### codemaker（开发备用，零 key）
+
+```bash
+python main.py --backend codemaker
+```
+
+- 自动在空闲端口起 `codemaker serve`，工作目录是临时目录，跑完即关闭
+- 每次补全新建 session、用完删除，保证无状态
+- 显式关闭它自带的 `bash/read/write/edit` 等工具，只当纯模型用
+- 已有服务时设 `FISH_CODEMAKER_URL=http://127.0.0.1:4123`，不再自启
+
+**限制**：codemaker 自带系统提示会描述它自己的环境（UE/MCP 工具），即使我们禁用全部工具并声明"以下清单为准"，模型仍会偶发地回答"没有浏览器工具"。因此 `--domain none`（纯推理）可以用，带工具的域请用 deepseek。
+
 ## 参数
 
 | 参数 | 说明 |
 |---|---|
 | `--goal` | 给 agent 的任务 |
 | `--domain` | `none`（默认，纯核心）/ `browser`（Chrome DevTools MCP） |
-| `--backend` | `codemaker`（默认，开发）/ `deepseek`（发布） |
+| `--backend` | `deepseek`（默认）/ `codemaker`（零 key，工具不可靠） |
 | `--model` | 覆盖 `FISH_MODEL` |
 | `--max-steps` | 步数预算，默认 12 |
 | `--max-tokens` | token 预算，默认 200000 |

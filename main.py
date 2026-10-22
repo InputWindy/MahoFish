@@ -27,8 +27,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--backend",
         choices=["codemaker", "deepseek"],
-        default="codemaker",
-        help="codemaker = local cli for development (default); deepseek = release",
+        default="deepseek",
+        help="deepseek = release backend (default); codemaker = local cli, tools unreliable",
     )
     parser.add_argument(
         "--model",
