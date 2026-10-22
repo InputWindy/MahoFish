@@ -17,6 +17,7 @@ class StaticPolicy(Policy):
         allow: set[str] | None = None,
         deny: set[str] | None = None,
         allow_dangerous: bool = False,
+        deny_permissions: set[str] | None = None,
         max_steps: int = 12,
         max_tokens: int = 200_000,
         deadline_seconds: float = 1800.0,
@@ -24,6 +25,9 @@ class StaticPolicy(Policy):
         self._allow = allow
         self._deny = deny or set()
         self._allow_dangerous = allow_dangerous
+        self._deny_permissions = (
+            {"write"} if deny_permissions is None else set(deny_permissions)
+        )
         self._max_steps = max_steps
         self._max_tokens = max_tokens
         self._deadline = deadline_seconds
@@ -34,12 +38,18 @@ class StaticPolicy(Policy):
         return self._max_tokens
 
     def check(self, spec: ToolSpec, args: dict[str, Any]) -> Verdict:
-        if spec.name in self._deny:            return Verdict.deny(f"tool {spec.name!r} is on the deny list")
+        if spec.name in self._deny:
+            return Verdict.deny(f"tool {spec.name!r} is on the deny list")
         if self._allow is not None and spec.name not in self._allow:
             return Verdict.deny(f"tool {spec.name!r} is not on the allow list")
+        risky = sorted(spec.permissions & self._deny_permissions)
+        if risky and not self._allow_dangerous:
+            return Verdict.deny(
+                f"tool {spec.name!r} needs permission {risky}; pass --allow-dangerous"
+            )
         if spec.dangerous and not self._allow_dangerous:
             return Verdict.deny(
-                f"tool {spec.name!r} mutates the page; pass --allow-dangerous"
+                f"tool {spec.name!r} mutates external state; pass --allow-dangerous"
             )
         return Verdict.allow()
 

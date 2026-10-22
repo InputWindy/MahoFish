@@ -28,17 +28,21 @@ ALLOWED_TOOLS = (
     "take_screenshot",
 )
 
-DANGEROUS_TOOLS = frozenset({"click", "fill"})
-NON_IDEMPOTENT_TOOLS = frozenset({"click", "fill", "navigate_page"})
-
 MAX_RESULT_CHARS = 6000
 
 
 class MCPTool(Tool):
-    def __init__(self, client: StdioMCPClient, raw: dict[str, Any], registry: "MCPToolRegistry") -> None:
+    def __init__(
+        self,
+        client: StdioMCPClient,
+        raw: dict[str, Any],
+        registry: "MCPToolRegistry",
+        override: dict[str, Any] | None = None,
+    ) -> None:
         self._client = client
         self._raw = raw
         self._registry = registry
+        self._override = dict(override or {})
         schema = dict(raw.get("inputSchema") or {})
         self._requires_page_id = "pageId" in (schema.get("required") or [])
 
@@ -53,8 +57,9 @@ class MCPTool(Tool):
             name=name,
             description=" ".join(str(self._raw.get("description", "")).split()),
             parameters={"properties": params, "required": required},
-            dangerous=name in DANGEROUS_TOOLS,
-            idempotent=name not in NON_IDEMPOTENT_TOOLS,
+            dangerous=bool(self._override.get("dangerous", False)),
+            idempotent=bool(self._override.get("idempotent", True)),
+            permissions=frozenset(self._override.get("permissions") or ()),
         )
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Observation:
@@ -73,14 +78,19 @@ class MCPTool(Tool):
 
 
 class MCPToolRegistry(ToolRegistry):
-    def __init__(self, client: StdioMCPClient) -> None:
+    def __init__(
+        self,
+        client: StdioMCPClient,
+        overrides: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self._client = client
         self._tools: dict[str, MCPTool] = {}
         self._page_id: int | None = None
+        mapping = dict(overrides or {})
         for raw in client.list_tools():
             name = str(raw.get("name", ""))
             if name in ALLOWED_TOOLS:
-                self._tools[name] = MCPTool(client, raw, self)
+                self._tools[name] = MCPTool(client, raw, self, mapping.get(name))
 
     def specs(self) -> list[ToolSpec]:
         return [

@@ -39,6 +39,7 @@ class EpisodeConfig:
     pack: Any | None = None
     checkpoint: bool = False
     on_checkpoint: Callable[[str, str], None] | None = None
+    facts_feedback: bool = True
     on_event: Callable[[int, str, str], None] | None = None
     on_tools: Callable[[str, list[str]], None] | None = None
     on_llm: Callable[[str, str], None] | None = None
@@ -85,6 +86,11 @@ def run_episode(config: EpisodeConfig) -> RunResult:
             max_llm_retries=config.max_llm_retries,
         )
         result = agent.run()
+        if config.facts_feedback:
+            try:
+                memory.feedback(result.stopped_reason == "final")
+            except Exception:
+                pass  # learning must never break the run
         if (
             config.checkpoint
             and result.stopped_reason != "final"

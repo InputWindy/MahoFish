@@ -39,6 +39,7 @@ class ToolSpec:
     parameters: dict[str, Any] = field(default_factory=dict)
     dangerous: bool = False
     idempotent: bool = True
+    permissions: frozenset[str] = frozenset()  # read / write / exec / network
 
     def render(self) -> str:
         params = ", ".join(
@@ -50,6 +51,8 @@ class ToolSpec:
             flags.append("dangerous")
         if not self.idempotent:
             flags.append("non-idempotent")
+        if self.permissions:
+            flags.append("/".join(sorted(self.permissions)))
         suffix = f" [{', '.join(flags)}]" if flags else ""
         return f"- {self.name}({params}){suffix}: {self.description}"
 
@@ -238,6 +241,10 @@ class Memory(ABC):
 
     def set_goal(self, goal: str) -> None:
         """Optional: point the same memory at a new turn of the conversation."""
+        return None
+
+    def feedback(self, success: bool) -> None:
+        """Optional: report whether the facts injected last were useful."""
         return None
 
 

@@ -56,8 +56,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 定义 | `ToolSpec(name, description, parameters, dangerous, idempotent)` |
-| 规则 | 策略只能依据 `dangerous` 判定，**不得按工具名硬编码**（当前 `DANGEROUS_TOOLS` 是唯一例外，需逐步迁到 spec） |
+| 定义 | `ToolSpec(name, description, parameters, dangerous, idempotent, permissions)` |
+| 规则 | 策略只依据 `dangerous` 与 `permissions` 判定，**不得按工具名硬编码**；域专用映射（哪个工具写、哪个非幂等）放在域包里（如 `BROWSER_OVERRIDES`），generic 工具层不认识任何具体工具名 |
 | 允许扩展 | 加 `cost_hint`、`required_permissions` 等元数据字段 |
 | 禁止 | 在循环里判断具体工具名 |
 

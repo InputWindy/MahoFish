@@ -474,6 +474,54 @@ def run_qq_case() -> None:
     print("[qq] notify tool contract OK (no SDK, no network)")
 
 
+class WriteTool(Tool):
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="writer",
+            description="Writes external state.",
+            permissions=frozenset({"write"}),
+        )
+
+    def run(self, args: dict, ctx: ToolContext) -> Observation:
+        return Observation.success("written")
+
+
+def run_permission_case() -> None:
+    tool = WriteTool()
+    strict = StaticPolicy(allow={"writer"})
+    verdict = strict.check(tool.spec, {})
+    assert not verdict.allowed and "permission" in verdict.reason, verdict
+
+    loose = StaticPolicy(allow={"writer"}, allow_dangerous=True)
+    assert loose.check(tool.spec, {}).allowed
+
+    read_only = StaticPolicy(deny_permissions=set())
+    assert read_only.check(tool.spec, {}).allowed
+    print("[policy] permissions drive the verdict, no tool names hardcoded")
+
+
+def run_facts_feedback_case() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JsonFactStore(Path(tmp) / "facts.json")
+        fact = store.upsert(
+            Fact(scope="x.com", kind="selector", key="title", text="title: .t")
+        )
+        memory = WindowMemory(goal="g", scope="x.com", facts=store)
+        memory.view(4000)
+        assert memory.injected_facts == [fact.id], memory.injected_facts
+
+        memory.feedback(True)
+        assert store.all()[0].score > fact.score, store.all()[0].score
+        assert memory.injected_facts == [], "feedback must consume the injection"
+
+        for _ in range(3):
+            memory.view(4000)
+            memory.feedback(False)
+        assert store.all() == [], "failed facts must be pruned"
+    print("[facts] injected -> feedback(+/-) -> prune")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -646,6 +694,8 @@ def main() -> int:
     run_notify_case()
     run_session_case()
     run_qq_case()
+    run_permission_case()
+    run_facts_feedback_case()
     run_checkpoint_case()
     run_compact_case()
     run_store_case()

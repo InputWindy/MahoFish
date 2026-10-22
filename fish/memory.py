@@ -51,6 +51,7 @@ class WindowMemory(Memory):
         self._summary: str = ""
         self._folded = 0
         self._folded_tools: Counter[str] = Counter()
+        self._injected_facts: list[str] = []
 
     @property
     def goal(self) -> str:
@@ -63,6 +64,10 @@ class WindowMemory(Memory):
     @property
     def summary(self) -> str:
         return self._summary
+
+    @property
+    def injected_facts(self) -> list[str]:
+        return list(self._injected_facts)
 
     def set_goal(self, goal: str) -> None:
         self._goal = goal
@@ -152,6 +157,7 @@ class WindowMemory(Memory):
             self._folded_tools[action.tool] += 1
 
     def _render_facts(self, limit: int) -> str:
+        self._injected_facts = []
         if self._facts is None or not self._scope:
             return ""
         try:
@@ -171,7 +177,17 @@ class WindowMemory(Memory):
                 break
             lines.append(line)
             used += len(line)
+            self._injected_facts.append(fact.id)
         return "\n".join(lines)
+
+    def feedback(self, success: bool) -> None:
+        if self._facts is None or not self._injected_facts:
+            return
+        for fact_id in dict.fromkeys(self._injected_facts):
+            self._facts.feedback(fact_id, success)
+        if not success:
+            self._facts.prune()
+        self._injected_facts = []
 
     def _render_summary(self, limit: int) -> str:
         if self._summary:
