@@ -172,7 +172,7 @@
 | 失败 | `run` 永不抛异常，渠道故障 → `Observation.failure("... send failed: ...")` |
 | 调用者 | ① agent（经域 `notify` 暴露）② 宿主（`scheduler` 直接 `tool.run(...)`，不经过模型）——同一份实现 |
 | 禁止 | ① 在 Tool 体系外另造 Notifier 抽象；② 把 token/webhook 放进参数；③ 给 `NotifyTool` 增加契约外的方法（删掉它、直接继承 `Tool` 后 Agent/Policy/域协议应零改动） |
-| 实现状态 | `console` / `file` / `popo` 已实现（popo 复用本机 `~/.codemaker/mcps.json` 里的 `broccoli-helper` stdio 服务调 `send_popo_notification`；可用 `FISH_POPO_HELPER` 覆盖命令、`FISH_POPO_RECEIVER` 覆盖默认收件人） |
+| 实现状态 | `console` / `file` / `popo` / `qq` 已实现（popo 走本机 `broccoli-helper`；qq 走官方 `qq-botpy` 的 WebSocket 网关，被动回复带 `msg_id`） |
 
 ---
 

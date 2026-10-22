@@ -28,6 +28,7 @@ from fish.contracts import (
 from fish.memory import MemoryConfig, WindowMemory
 from fish.notify import MAX_TEXT, ConsoleNotifyTool, FileNotifyTool, PopoNotifyTool
 from fish.notify import popo_helper_command
+from fish.qq import QQNotifyTool
 from fish.store import Fact, JsonFactStore
 from fish.session_store import SessionStore
 from fish.listeners import Event
@@ -447,6 +448,32 @@ def run_session_case() -> None:
     print("[session] persist -> restore -> new goal, torn line tolerated")
 
 
+class FakeQQ:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str, str]] = []
+
+    def send(self, session: str, content: str, kind: str = "") -> str:
+        self.sent.append((session, content, kind))
+        return f"qq:{session}"
+
+
+def run_qq_case() -> None:
+    fake = FakeQQ()
+    tool = QQNotifyTool(fake)  # type: ignore[arg-type]
+    assert tool.spec.name == "notify_qq", tool.spec.name
+    assert tool.spec.dangerous and not tool.spec.idempotent
+
+    ok = tool.run(
+        {"title": "t", "text": "hello", "to": "openid-1"}, ToolContext(step=1)
+    )
+    assert ok.ok, ok
+    assert fake.sent == [("openid-1", "hello", "")], fake.sent
+
+    missing = tool.run({"title": "t", "text": "x", "to": ""}, ToolContext(step=1))
+    assert not missing.ok, missing
+    print("[qq] notify tool contract OK (no SDK, no network)")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -615,6 +642,7 @@ def main() -> int:
     run_contract_violation_cases()
     run_notify_case()
     run_session_case()
+    run_qq_case()
     run_checkpoint_case()
     run_compact_case()
     run_store_case()

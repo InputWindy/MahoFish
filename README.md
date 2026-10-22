@@ -183,9 +183,7 @@ python -m fish.server --verbose --max-steps 8
 
 **会话记忆**：每轮 turn 追加到 `.fish/sessions/<hash>.jsonl`（append-only，坏一行只丢一条）；压缩摘要也落盘，重启直接复用，不重复付摘要费用。恢复时只载入摘要 + 最近 8 轮，控制上下文。
 
-**断点续做**：episode 非正常结束（预算耗尽 / 模型不可用）时，会额外做一次压缩调用，把「已完成的进度 + 下一步」写成 checkpoint 落盘，并把友好提示回给你：
-
-```
+**断点续做**：episode 非正常结束（预算耗尽 / 模型不可用）时，会额外做一次压缩调用，把「已完成的进度 + 下一步」写成 checkpoint 落盘，并把友好提示回给你：```
 这次没做完（步数预算用完）。
 
 已保留进度：
@@ -196,6 +194,26 @@ NEXT: 打开第一个链接读文档
 ```
 
 你回「继续 / 接着 / continue」时，服务会把 checkpoint 注入新目标再跑一轮，不会从零重来。
+
+### QQ 渠道（官方机器人）
+
+需要 `pip install qq-botpy`（可选依赖，不装不影响 POPO），并在 `.env` 配置：
+
+```
+FISH_QQ_APPID=你的AppID
+FISH_QQ_SECRET=你的AppSecret
+```
+
+```bash
+python -m fish.server --channels popo,qq    # 两个来源同时监听
+python -m fish.server --channels qq
+```
+
+平台约束（不是我们的设计选择）：
+
+- 回复必须引用收到的 `msg_id`（被动回复），监听器因此缓存每个会话最近一条
+- 群里只有 **@机器人** 会触发；私聊直接发即可
+- botpy 走 WebSocket 网关，**不需要公网回调地址**
 
 ## 定时任务
 

@@ -21,6 +21,7 @@ from .contracts import ToolContext
 from .listeners import Event, Listener, PopoListener, current_user
 from .memory import WindowMemory
 from .notify import PopoNotifyTool
+from .qq import QQChannel, QQListener, QQNotifyTool
 from .runtime import EpisodeConfig, run_episode
 from .session_store import SessionStore, TurnPersister
 from .store import JsonFactStore
@@ -55,9 +56,15 @@ class ServerConfig:
 
 
 class Server:
-    def __init__(self, config: ServerConfig, listeners: Iterable[Listener]) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        listeners: Iterable[Listener],
+        qq_channel: QQChannel | None = None,
+    ) -> None:
         self._config = config
         self._listeners = list(listeners)
+        self._qq = qq_channel
         self._queue: queue.Queue[Event] = queue.Queue()
         self._store = SessionStore(
             config.sessions_dir or (ROOT / ".fish" / "sessions"),
@@ -225,6 +232,17 @@ class Server:
             )
             print(f"[server] -> {observation.content}", flush=True)
             return
+        if event.channel == "qq":
+            if self._qq is None:
+                print("[server] qq channel is not configured", file=sys.stderr)
+                return
+            tool = QQNotifyTool(self._qq)
+            observation = tool.run(
+                {"title": "MahoFish", "text": text[:3000], "to": event.target},
+                ToolContext(step=0),
+            )
+            print(f"[server] -> {observation.content}", flush=True)
+            return
         print(f"[server] -> {event.channel}:{event.target}\n{text}", flush=True)
 
     def _trace(self, step: int, kind: str, text: str) -> None:
@@ -275,7 +293,11 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="MahoFish agent server.")
-    parser.add_argument("--channel", default="popo", choices=["popo"])
+    parser.add_argument(
+        "--channels",
+        default="popo",
+        help="comma separated listeners: popo,qq",
+    )
     parser.add_argument("--session", default="13e43356@app.robot.popo.com")
     parser.add_argument("--self", default="", help="your POPO uid (auto-detected)")
     parser.add_argument("--interval", type=float, default=15.0)
@@ -290,17 +312,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
+    names = [part.strip() for part in args.channels.split(",") if part.strip()]
+    listeners: list[Listener] = []
+    qq_channel: QQChannel | None = None
     self_uid = args.self or current_user()
-    if not self_uid:
-        print("[server] cannot resolve your uid; pass --self", file=sys.stderr)
+
+    if "popo" in names:
+        if not self_uid:
+            print("[server] cannot resolve your uid; pass --self", file=sys.stderr)
+            return 2
+        listeners.append(
+            PopoListener(
+                session_id=args.session,
+                self_uid=self_uid,
+                interval=args.interval,
+                since_minutes=args.since_minutes,
+            )
+        )
+    if "qq" in names:
+        qq_channel = QQChannel()
+        if not qq_channel.configured:
+            print(
+                "[server] set FISH_QQ_APPID and FISH_QQ_SECRET to enable qq",
+                file=sys.stderr,
+            )
+            return 2
+        listeners.append(QQListener(qq_channel))
+    if not listeners:
+        print(f"[server] no listener enabled for {args.channels!r}", file=sys.stderr)
         return 2
 
-    listener = PopoListener(
-        session_id=args.session,
-        self_uid=self_uid,
-        interval=args.interval,
-        since_minutes=args.since_minutes,
-    )
     server = Server(
         ServerConfig(
             domain=args.domain,
@@ -311,10 +352,11 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             verbose=args.verbose,
         ),
-        [listener],
+        listeners,
+        qq_channel=qq_channel,
     )
     print(
-        f"[server] self={self_uid} session={args.session} "
+        f"[server] channels={names} self={self_uid or '-'} session={args.session} "
         f"domain={args.domain} backend={args.backend} "
         f"persist={not args.no_persist} dry_run={args.dry_run}",
         flush=True,
