@@ -21,6 +21,7 @@ from importlib.metadata import entry_points
 from typing import Any, Callable
 
 from .contracts import ToolRegistry, TurnObserver
+from .tools import CompositeRegistry
 
 ENTRY_POINT_GROUP = "fish.domains"
 
@@ -28,6 +29,7 @@ _BUILTIN: dict[str, str] = {
     "none": "fish.domains.core:CoreDomain",
     "browser": "fish.domains.browser:BrowserDomain",
     "notify": "fish.domains.notify:NotifyDomain",
+    "qq": "fish.domains.qq:QQDomain",
 }
 
 DomainFactory = Callable[..., "DomainPack"]
@@ -67,6 +69,47 @@ class DomainPack(ABC):
 
     def close(self) -> None:
         """Release resources. Must be idempotent."""
+
+
+class CompositeDomain(DomainPack):
+    """Several domains behind one pack: merged tools, concatenated hints."""
+
+    def __init__(self, packs: list[DomainPack]) -> None:
+        if not packs:
+            raise DomainError("composite domain needs at least one pack")
+        self._packs = packs
+        self.name = "+".join(pack.name for pack in packs)
+        self.capabilities = DomainCapabilities(
+            tools=any(pack.capabilities.tools for pack in packs),
+            hints=any(pack.capabilities.hints for pack in packs),
+            observers=any(pack.capabilities.observers for pack in packs),
+            scope=any(pack.capabilities.scope for pack in packs),
+            closable=all(pack.capabilities.closable for pack in packs),
+        )
+        self._registry = CompositeRegistry([pack.registry() for pack in packs])
+
+    def registry(self) -> ToolRegistry:
+        return self._registry
+
+    def hints(self) -> str:
+        return "\n".join(h for h in (pack.hints() for pack in self._packs) if h)
+
+    def observers(self) -> list[TurnObserver]:
+        return [observer for pack in self._packs for observer in pack.observers()]
+
+    def scope_for(self, goal: str) -> str | None:
+        for pack in self._packs:
+            scope = pack.scope_for(goal)
+            if scope:
+                return scope
+        return None
+
+    def close(self) -> None:
+        for pack in self._packs:
+            try:
+                pack.close()
+            except Exception:
+                pass
 
 
 def available() -> list[str]:

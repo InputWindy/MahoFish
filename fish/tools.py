@@ -142,6 +142,26 @@ class LocalRegistry(ToolRegistry):
         return self._tools.get(name)
 
 
+class CompositeRegistry(ToolRegistry):
+    """Merge several registries; duplicate tool names are a configuration error."""
+
+    def __init__(self, registries: list[ToolRegistry]) -> None:
+        self._tools: dict[str, Tool] = {}
+        for registry in registries:
+            for spec in registry.specs():
+                if spec.name in self._tools:
+                    raise ValueError(f"duplicate tool name {spec.name!r}")
+                tool = registry.get(spec.name)
+                if tool is not None:
+                    self._tools[spec.name] = tool
+
+    def specs(self) -> list[ToolSpec]:
+        return [tool.spec for tool in self._tools.values()]
+
+    def get(self, name: str) -> Tool | None:
+        return self._tools.get(name)
+
+
 class EmptyRegistry(ToolRegistry):
     """Domain-free core: no tools, loop only produces final answers."""
 

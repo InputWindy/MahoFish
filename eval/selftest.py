@@ -522,6 +522,62 @@ def run_facts_feedback_case() -> None:
     print("[facts] injected -> feedback(+/-) -> prune")
 
 
+class FakeQQChannel:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    def send_file(self, session: str, source: str, kind: str = "") -> str:
+        self.sent.append((session, source))
+        return f"qq:{session}"
+
+
+def run_qq_file_case() -> None:
+    from fish.qq import (
+        QQReadFileTool,
+        QQSender,
+        QQSendFileTool,
+        file_type_of,
+    )
+    from fish.tools import CompositeRegistry
+
+    assert file_type_of("a.PNG") == 1 and file_type_of("b.zip") == 4
+
+    channel = FakeQQChannel()
+    sender = QQSender(channel)  # type: ignore[arg-type]
+    tool = QQSendFileTool(sender)
+    assert tool.spec.name == "qq_send_file" and tool.spec.dangerous
+
+    no_target = tool.run({"path": "x.zip"}, ToolContext(step=1))
+    assert not no_target.ok and "conversation" in no_target.content, no_target
+
+    sender.target = "openid-x"
+    sent = tool.run({"path": "x.zip"}, ToolContext(step=1))
+    assert sent.ok and channel.sent == [("openid-x", "x.zip")], channel.sent
+
+    with tempfile.TemporaryDirectory() as tmp:
+        inbox = Path(tmp) / "inbox"
+        inbox.mkdir()
+        inside = inbox / "a.txt"
+        inside.write_text("hello", encoding="utf-8")
+        outside = Path(tmp) / "b.txt"
+        outside.write_text("secret", encoding="utf-8")
+
+        reader = QQReadFileTool(inbox)
+        ok = reader.run({"path": str(inside)}, ToolContext(step=1))
+        assert ok.ok and "hello" in ok.content, ok
+        blocked = reader.run({"path": str(outside)}, ToolContext(step=1))
+        assert not blocked.ok and "inbox" in blocked.content, blocked
+
+    dup = FakeRegistry()
+    try:
+        CompositeRegistry([dup, dup])
+    except ValueError as exc:
+        assert "duplicate" in str(exc)
+    else:
+        raise AssertionError("duplicate tool names must be rejected")
+    print("[qq] file tools + composite registry OK")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -694,6 +750,7 @@ def main() -> int:
     run_notify_case()
     run_session_case()
     run_qq_case()
+    run_qq_file_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()

@@ -72,6 +72,7 @@ class Server:
         )
         self._facts = config.facts_path or (ROOT / ".fish" / "facts.json")
         self._pack = None
+        self._qq_domain = None
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -99,13 +100,18 @@ class Server:
                     pass
 
     def _ensure_pack(self):
-        """Load the domain once and reuse it: spawning Chrome per message is slow."""
-        if self._pack is None:
-            try:
-                self._pack = domain.load(self._config.domain, headless=True)
-            except Exception as exc:
-                print(f"[server] domain load failed: {exc}", file=sys.stderr, flush=True)
-                return None
+        """Load domains once and reuse them: spawning Chrome per message is slow."""
+        if self._pack is not None:
+            return self._pack
+        try:
+            packs = [domain.load(self._config.domain, headless=True)]
+            if self._qq is not None:
+                self._qq_domain = domain.load("qq", channel=self._qq)
+                packs.append(self._qq_domain)
+            self._pack = packs[0] if len(packs) == 1 else domain.CompositeDomain(packs)
+        except Exception as exc:
+            print(f"[server] domain load failed: {exc}", file=sys.stderr, flush=True)
+            return None
         return self._pack
 
     def drain_once(self) -> int:
@@ -143,6 +149,8 @@ class Server:
             answer = "域装配失败，暂时无法处理。"
             self._reply(event, answer)
             return answer
+        if self._qq_domain is not None:
+            self._qq_domain.set_target(event.target)
 
         observers = (
             [TurnPersister(self._store, event.session_id)]
@@ -315,6 +323,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, default=12)
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--no-persist", action="store_true")
+    parser.add_argument(
+        "--allow-dangerous",
+        action="store_true",
+        help="allow write-side tools (browser click/fill, qq_send_file)",
+    )
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -359,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
             persist=not args.no_persist,
             dry_run=args.dry_run,
             verbose=args.verbose,
+            allow_dangerous=args.allow_dangerous,
         ),
         listeners,
         qq_channel=qq_channel,

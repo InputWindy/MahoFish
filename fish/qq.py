@@ -12,13 +12,38 @@ Two constraints from the platform:
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
+import re
 import threading
-from typing import Callable
+import urllib.request
+from pathlib import Path
+from typing import Callable, Iterable
 
+from .contracts import Observation, Tool, ToolContext, ToolSpec
 from .listeners import Event, Listener
 from .llm import load_dotenv
 from .notify import NotifyTool
+
+ROOT = Path(__file__).resolve().parents[1]
+INBOX = ROOT / ".fish" / "inbox"
+MAX_INLINE = 5 * 1024 * 1024  # platform limit for file_data upload
+_SAFE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
+
+FILE_TYPES = {
+    ".png": 1,
+    ".jpg": 1,
+    ".jpeg": 1,
+    ".gif": 1,
+    ".mp4": 2,
+    ".silk": 3,
+    ".mp3": 3,
+    ".wav": 3,
+}
+
+
+def file_type_of(source: str) -> int:
+    return FILE_TYPES.get(Path(source.split("?")[0]).suffix.lower(), 4)
 
 
 class QQChannel:
@@ -83,6 +108,7 @@ class QQChannel:
                     str(message.author.user_openid),
                     str(message.content or ""),
                     str(message.id),
+                    getattr(message, "attachments", None) or [],
                 )
 
             async def on_group_at_message_create(self, message):
@@ -91,6 +117,7 @@ class QQChannel:
                     str(message.group_openid),
                     str(message.content or ""),
                     str(message.id),
+                    getattr(message, "attachments", None) or [],
                 )
 
         intents = botpy.Intents(public_messages=True, direct_message=True)
@@ -100,9 +127,20 @@ class QQChannel:
         except Exception as exc:  # keep the process alive; report loudly
             print(f"[qq] client stopped: {exc}", flush=True)
 
-    def _push(self, kind: str, session: str, content: str, msg_id: str) -> None:
+    def _push(
+        self,
+        kind: str,
+        session: str,
+        content: str,
+        msg_id: str,
+        attachments: Iterable = (),
+    ) -> None:
         self._last_msg[session] = msg_id
         self._kinds[session] = kind
+        saved = self._download(msg_id, attachments)
+        if saved:
+            listing = "\n".join(f"- {path}" for path in saved)
+            content = f"{content}\n\n[收到附件，已保存到本地]\n{listing}".strip()
         if not content.strip() or self._emit is None:
             return
         self._emit(
@@ -111,9 +149,61 @@ class QQChannel:
                 session_id=session,
                 text=content.strip(),
                 target=session,
-                meta={"kind": kind, "msg_id": msg_id},
+                meta={"kind": kind, "msg_id": msg_id, "attachments": saved},
             )
         )
+
+    def _download(self, msg_id: str, attachments: Iterable) -> list[str]:
+        saved: list[str] = []
+        for attachment in attachments:
+            url = str(getattr(attachment, "url", "") or "")
+            if not url:
+                continue
+            name = str(getattr(attachment, "filename", "") or "file")
+            safe = _SAFE.sub("_", name)[-80:] or "file"
+            path = INBOX / f"{msg_id[:8]}-{safe}"
+            try:
+                INBOX.mkdir(parents=True, exist_ok=True)
+                urllib.request.urlretrieve(url, path)
+                saved.append(str(path))
+            except Exception as exc:
+                print(f"[qq] attachment download failed: {exc}", flush=True)
+        return saved
+
+    def send_file(self, session: str, source: str, kind: str = "") -> str:
+        """Send an image/video/voice/file to a QQ user or group."""
+        if self._client is None or self._loop is None:
+            raise RuntimeError("qq client is not ready yet")
+        from botpy.api import Route
+
+        kind = kind or self.kind_of(session)
+        file_type = file_type_of(source)
+        payload: dict[str, object] = {"file_type": file_type, "srv_send_msg": True}
+        if source.startswith(("http://", "https://")):
+            payload["url"] = source
+        else:
+            path = Path(source)
+            if not path.is_file():
+                raise RuntimeError(f"file not found: {source}")
+            data = path.read_bytes()
+            if len(data) > MAX_INLINE:
+                raise RuntimeError(
+                    "local files over 5MB need chunked upload, which is not implemented"
+                )
+            payload["file_data"] = base64.b64encode(data).decode("ascii")
+            payload["file_name"] = path.name
+        if kind == "group":
+            route = Route("POST", "/v2/groups/{group_openid}/files", group_openid=session)
+        else:
+            route = Route("POST", "/v2/users/{openid}/files", openid=session)
+        api = self._client.api
+
+        async def _send():
+            return await api._http.request(route, json=payload)
+
+        future = asyncio.run_coroutine_threadsafe(_send(), self._loop)
+        future.result(timeout=60)
+        return f"qq:{kind}:{session} ({file_type})"
 
     # -- server side --------------------------------------------------------
 
@@ -152,6 +242,94 @@ class QQListener(Listener):
 
     def stop(self) -> None:
         self.channel.stop()
+
+
+class QQSender:
+    """Shared, mutable target so tools know which conversation to answer."""
+
+    def __init__(self, channel: QQChannel) -> None:
+        self.channel = channel
+        self.target = ""
+
+
+class QQSendFileTool(Tool):
+    def __init__(self, sender: QQSender, default_target: str = "") -> None:
+        self._sender = sender
+        self._default = default_target
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="qq_send_file",
+            description=(
+                "Send an image/video/voice/file to the current QQ conversation. "
+                "Use a local path under .fish/inbox or a public http URL."
+            ),
+            parameters={
+                "properties": {
+                    "path": {"type": "string"},
+                    "to": {"type": "string"},
+                },
+                "required": ["path"],
+            },
+            dangerous=True,
+            idempotent=False,
+            permissions=frozenset({"read", "network"}),
+        )
+
+    def run(self, args: dict, ctx: ToolContext) -> Observation:
+        path = str(args.get("path") or "").strip()
+        target = str(args.get("to") or self._default or self._sender.target).strip()
+        if not path:
+            return Observation.failure("path is required")
+        if not target:
+            return Observation.failure("no qq conversation to send to")
+        try:
+            destination = self._sender.channel.send_file(target, path)
+        except Exception as exc:
+            return Observation.failure(f"qq send_file failed: {exc}")
+        return Observation.success(f"file sent via {destination}")
+
+
+class QQReadFileTool(Tool):
+    """Read a downloaded attachment; deliberately limited to .fish/inbox."""
+
+    def __init__(self, inbox: Path = INBOX, max_chars: int = 4000) -> None:
+        self._inbox = inbox.resolve()
+        self._max = max_chars
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="qq_read_file",
+            description="Read a text attachment previously downloaded to .fish/inbox.",
+            parameters={
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+            permissions=frozenset({"read"}),
+        )
+
+    def run(self, args: dict, ctx: ToolContext) -> Observation:
+        raw = str(args.get("path") or "").strip()
+        if not raw:
+            return Observation.failure("path is required")
+        path = Path(raw)
+        try:
+            resolved = path.resolve()
+        except OSError as exc:
+            return Observation.failure(f"bad path: {exc}")
+        if not resolved.is_relative_to(self._inbox):
+            return Observation.failure("only files under .fish/inbox can be read")
+        if not resolved.is_file():
+            return Observation.failure(f"file not found: {resolved}")
+        try:
+            text = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return Observation.failure(f"read failed: {exc}")
+        if len(text) > self._max:
+            text = text[: self._max] + "\n...[truncated]"
+        return Observation.success(text or "(empty file)")
 
 
 class QQNotifyTool(NotifyTool):
