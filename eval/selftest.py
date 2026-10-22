@@ -670,6 +670,46 @@ def run_approval_case() -> None:
     print(f"[approval] grant/revoke + denial reporting OK ({result.denials[0][:40]})")
 
 
+class FakeWeChat:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    def send(self, to: str, text: str) -> str:
+        self.sent.append((to, text))
+        return f"wechat:{to}"
+
+
+def run_wechat_case() -> None:
+    from fish.wechat import WeChatNotifyTool, WeChatState, text_of
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "w.json"
+        WeChatState(bot_token="t", contexts={"u": "ctx"}).save(path)
+        loaded = WeChatState.load(path)
+        assert loaded.bot_token == "t" and loaded.contexts["u"] == "ctx"
+
+    assert (
+        text_of(
+            {
+                "item_list": [
+                    {"type": 1, "text_item": {"text": "hi"}},
+                    {"type": 2},
+                ]
+            }
+        )
+        == "hi"
+    )
+
+    fake = FakeWeChat()
+    tool = WeChatNotifyTool(fake)  # type: ignore[arg-type]
+    assert tool.spec.name == "notify_wechat" and tool.spec.dangerous
+    ok = tool.run({"title": "t", "text": "hello", "to": "uid"}, ToolContext(step=1))
+    assert ok.ok and fake.sent == [("uid", "hello")], fake.sent
+    missing = tool.run({"title": "t", "text": "x", "to": ""}, ToolContext(step=1))
+    assert not missing.ok, missing
+    print("[wechat] state/model/notify contract OK (no network)")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -845,6 +885,7 @@ def main() -> int:
     run_qq_file_case()
     run_search_case()
     run_approval_case()
+    run_wechat_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()
