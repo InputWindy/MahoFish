@@ -28,7 +28,7 @@ from .store import JsonFactStore
 
 ROOT = Path(__file__).resolve().parents[1]
 _URL = re.compile(r"https?://([^/\s]+)")
-CONTINUE_WORDS = {
+CONTINUE_WORDS = (
     "继续",
     "接着",
     "接着做",
@@ -36,9 +36,9 @@ CONTINUE_WORDS = {
     "继续吧",
     "continue",
     "cont",
-    "go on",
-    "keep going",
-}
+    "goon",
+    "keepgoing",
+)
 
 
 @dataclass
@@ -197,7 +197,7 @@ class Server:
 
     def _resolve_goal(self, event: Event, snapshot) -> tuple[str, bool]:
         text = event.text.strip()
-        if text.lower() not in CONTINUE_WORDS:
+        if not _is_continue(text):
             return text, False
         checkpoint = snapshot.checkpoint or {}
         progress = checkpoint.get("progress", "")
@@ -253,6 +253,14 @@ class Server:
 def _scope_of(text: str) -> str | None:
     match = _URL.search(text)
     return match.group(1).lower() if match else None
+
+
+def _is_continue(text: str) -> bool:
+    """'继续' should also match '好！继续吧' - short replies only."""
+    compact = re.sub(r"[\s，。！!？?、,.~…:：]+", "", text.lower())
+    if not compact or len(compact) > 10:
+        return False
+    return any(word in compact for word in CONTINUE_WORDS)
 
 
 def _split_checkpoint(text: str) -> tuple[str, str]:

@@ -17,6 +17,7 @@ import threading
 from typing import Callable
 
 from .listeners import Event, Listener
+from .llm import load_dotenv
 from .notify import NotifyTool
 
 
@@ -24,6 +25,7 @@ class QQChannel:
     name = "qq"
 
     def __init__(self, appid: str = "", secret: str = "") -> None:
+        load_dotenv()
         self._appid = appid or os.environ.get("FISH_QQ_APPID", "")
         self._secret = secret or os.environ.get("FISH_QQ_SECRET", "")
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -64,6 +66,8 @@ class QQChannel:
     def _run(self) -> None:
         import botpy
 
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         outer = self
 
         class Client(botpy.Client):

@@ -500,9 +500,12 @@ def run_checkpoint_case() -> None:
         assert "已打开搜索页" in goal, goal
 
         goal, continuing = server._resolve_goal(
-            Event("popo", "s", "帮我查天气", "me"), snapshot
+            Event("popo", "s", "好！继续吧", "me"), snapshot
         )
-        assert not continuing and goal == "帮我查天气", goal
+        assert continuing, "'好！继续吧' must also resume"
+        assert not server._resolve_goal(
+            Event("popo", "s", "继续帮我看看这个页面的价格", "me"), snapshot
+        )[1], "long sentences are new tasks, not 'continue'"
     print("[checkpoint] persist / split / friendly stop / continue detection OK")
 
 
