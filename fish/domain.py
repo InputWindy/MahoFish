@@ -30,6 +30,7 @@ _BUILTIN: dict[str, str] = {
     "browser": "fish.domains.browser:BrowserDomain",
     "notify": "fish.domains.notify:NotifyDomain",
     "qq": "fish.domains.qq:QQDomain",
+    "search": "fish.domains.search:SearchDomain",
 }
 
 DomainFactory = Callable[..., "DomainPack"]

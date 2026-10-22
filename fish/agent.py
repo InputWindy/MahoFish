@@ -111,6 +111,7 @@ class Agent:
 
     def run(self) -> RunResult:
         self._faults = []
+        self._denials: list[str] = []
         system = SYSTEM_PROMPT.format(
             identity=self._identity,
             protocol=PROTOCOL_HINT,
@@ -274,6 +275,7 @@ class Agent:
                 verdict = Verdict.deny(f"policy error (fail-closed): {exc}")
                 self._fault(step, "policy", f"check failed: {exc}")
             if not verdict.allowed:
+                self._denials.append(f"{action.tool}: {verdict.reason}")
                 observation = Observation.failure(f"denied by policy: {verdict.reason}")
             else:
                 try:
@@ -342,6 +344,7 @@ class Agent:
             usage=usage,
             stopped_reason=reason,
             faults=tuple(self._faults),
+            denials=tuple(self._denials),
         )
 
     def _emit(self, step: int, kind: str, text: str) -> None:

@@ -172,6 +172,7 @@ class RunResult:
     usage: Usage
     stopped_reason: str
     faults: tuple[Fault, ...] = ()
+    denials: tuple[str, ...] = ()
 
 
 class ToolContext:

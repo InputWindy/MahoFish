@@ -20,6 +20,10 @@ LLM  ──决定调用哪个工具──▶  agent 循环  ──JSON-RPC/stdio
 前置：Python 3.10+，Node 20+，本机装了 Chrome。默认开发后端用本机 `codemaker` 登录态，不需要 API key；只有 `--backend deepseek`（发布）才需要 key。
 
 ```bash
+setup.bat        # 一键检查环境：Python / 依赖 / .env / Node / chrome-devtools
+```
+
+```bash
 # 1. 拉 MCP server（第一次会下载）
 npx -y chrome-devtools-mcp@1.11.0 --version
 
@@ -214,6 +218,26 @@ python -m fish.server --channels qq
 - 回复必须引用收到的 `msg_id`（被动回复），监听器因此缓存每个会话最近一条
 - 群里只有 **@机器人** 会触发；私聊直接发即可
 - botpy 走 WebSocket 网关，**不需要公网回调地址**
+
+### 搜索能力（web_search / web_fetch）
+
+无需额外 API key：复用你本机 `~/.codemaker/mcps.json` 里已配置的搜索 MCP 服务（streamable HTTP）。
+
+- 服务启动时自动挂载 `web_search` / `web_fetch`
+- 关闭：`--no-search`
+- 换服务：`FISH_SEARCH_MCP_URL` + `FISH_SEARCH_MCP_HEADERS`（JSON）
+
+### 危险动作授权
+
+写类操作（浏览器 `click`/`fill`、`qq_write_file`、`qq_send_file`）默认被拒。被拒时回复末尾会提示：
+
+```
+（有 1 个操作需要写权限，回复「授权」后我会重试）
+```
+
+- 回复 **授权**：当前会话获得 10 分钟写权限，再发一次命令即可
+- 回复 **取消授权**：立即收回
+- 启动时加 `--allow-dangerous` 可对所有会话常开（不推荐）
 
 ## 定时任务
 

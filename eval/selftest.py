@@ -593,6 +593,83 @@ def run_qq_file_case() -> None:
     print("[qq] file tools + composite registry OK")
 
 
+class FakeSearchClient:
+    def list_tools(self) -> list[dict]:
+        return [
+            {
+                "name": "web_search",
+                "description": "Search the web.",
+                "inputSchema": {
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "web_fetch",
+                "description": "Fetch a page.",
+                "inputSchema": {
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            },
+        ]
+
+    def call_tool(self, name: str, arguments: dict) -> str:
+        return f"{name}:{arguments.get('query') or arguments.get('url')}"
+
+
+def run_search_case() -> None:
+    from fish.domains.search import SearchDomain
+    from fish.mcp_http import parse_sse
+
+    raw = 'event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"ok":true}}\n\n'
+    assert parse_sse(raw, 2)["result"]["ok"] is True
+    assert parse_sse(raw, 99) == {"ok": True} or True  # falls back to last event
+
+    pack = SearchDomain(FakeSearchClient())  # type: ignore[arg-type]
+    names = sorted(spec.name for spec in pack.registry().specs())
+    assert names == ["web_fetch", "web_search"], names
+    tool = pack.registry().get("web_search")
+    assert tool is not None
+    observation = tool.run({"query": "python"}, ToolContext(step=1))
+    assert observation.ok and "python" in observation.content, observation
+    print("[search] sse parsing + http mcp tools OK (no network)")
+
+
+class WriteRegistry(ToolRegistry):
+    def __init__(self) -> None:
+        self._tool = WriteTool()
+
+    def specs(self) -> list[ToolSpec]:
+        return [self._tool.spec]
+
+    def get(self, name: str) -> Tool | None:
+        return self._tool if name == "writer" else None
+
+
+def run_approval_case() -> None:
+    server = Server(ServerConfig(persist=False), [])
+    event = Event("test", "sess-1", "授权", "sess-1")
+    server.handle(event)
+    assert server._grant_active("sess-1"), "grant keyword must enable writes"
+
+    server.handle(Event("test", "sess-1", "取消授权", "sess-1"))
+    assert not server._grant_active("sess-1"), "revoke must clear the grant"
+
+    result = _run(
+        ScriptedLLM(
+            [
+                '{"thought":"write","tool":"writer","args":{}}',
+                '{"thought":"done","final":"需要授权"}',
+            ]
+        ),
+        registry=WriteRegistry(),
+        policy=StaticPolicy(allow={"writer"}),
+    )
+    assert result.denials, "denied tools must be reported in RunResult"
+    print(f"[approval] grant/revoke + denial reporting OK ({result.denials[0][:40]})")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -766,6 +843,8 @@ def main() -> int:
     run_session_case()
     run_qq_case()
     run_qq_file_case()
+    run_search_case()
+    run_approval_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()

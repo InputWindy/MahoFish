@@ -12,12 +12,14 @@ import argparse
 import queue
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from . import domain
 from .contracts import ToolContext
+from .domains.search import available as search_available
 from .listeners import Event, Listener, PopoListener, current_user
 from .memory import WindowMemory
 from .notify import PopoNotifyTool
@@ -39,6 +41,9 @@ CONTINUE_WORDS = (
     "goon",
     "keepgoing",
 )
+GRANT_WORDS = ("授权", "允许写", "允许", "allow", "approve")
+REVOKE_WORDS = ("取消授权", "收回授权", "revoke")
+GRANT_TTL = 600.0
 
 
 @dataclass
@@ -51,6 +56,7 @@ class ServerConfig:
     persist: bool = True
     dry_run: bool = False
     verbose: bool = False
+    search: bool = True
     facts_path: Path | None = None
     sessions_dir: Path | None = None
 
@@ -73,6 +79,7 @@ class Server:
         self._facts = config.facts_path or (ROOT / ".fish" / "facts.json")
         self._pack = None
         self._qq_domain = None
+        self._grants: dict[str, float] = {}
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -108,11 +115,21 @@ class Server:
             if self._qq is not None:
                 self._qq_domain = domain.load("qq", channel=self._qq)
                 packs.append(self._qq_domain)
+            if self._config.search and search_available():
+                packs.append(domain.load("search"))
             self._pack = packs[0] if len(packs) == 1 else domain.CompositeDomain(packs)
         except Exception as exc:
             print(f"[server] domain load failed: {exc}", file=sys.stderr, flush=True)
             return None
         return self._pack
+
+    def _grant_active(self, session: str) -> bool:
+        expiry = self._grants.get(session, 0.0)
+        if expiry and expiry > time.time():
+            return True
+        if expiry:
+            self._grants.pop(session, None)
+        return False
 
     def drain_once(self) -> int:
         """Poll every listener once, then handle what arrived."""
@@ -137,6 +154,22 @@ class Server:
         if self._config.dry_run:
             print("[server] dry-run: no episode, no reply", flush=True)
             return ""
+
+        command = _norm(event.text)
+        if command in GRANT_WORDS:
+            self._grants[event.session_id] = time.time() + GRANT_TTL
+            self._reply(
+                event,
+                "已授权写操作 10 分钟。请把刚才的命令再发一次。",
+            )
+            return ""
+        if command in REVOKE_WORDS:
+            self._grants.pop(event.session_id, None)
+            self._reply(event, "已收回写操作授权。")
+            return ""
+        allow_dangerous = self._config.allow_dangerous or self._grant_active(
+            event.session_id
+        )
 
         snapshot = self._store.load(event.session_id, keep_turns=8)
         goal, continuing = self._resolve_goal(event, snapshot)
@@ -177,7 +210,7 @@ class Server:
                     max_steps=self._config.max_steps,
                     max_tokens=120_000,
                     timeout=self._config.timeout,
-                    allow_dangerous=self._config.allow_dangerous,
+                    allow_dangerous=allow_dangerous,
                     memory=memory,
                     observers=observers,
                     pack=pack,
@@ -188,6 +221,11 @@ class Server:
             )
             if result.stopped_reason == "final":
                 answer = result.answer
+                if result.denials and not allow_dangerous:
+                    answer += (
+                        f"\n\n（有 {len(result.denials)} 个操作需要写权限，"
+                        "回复「授权」后我会重试）"
+                    )
             else:
                 answer = _friendly_stop(
                     result.stopped_reason, captured[-1] if captured else ""
@@ -263,9 +301,13 @@ def _scope_of(text: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
+def _norm(text: str) -> str:
+    return re.sub(r"[\s，。！!？?、,.~…:：\"'「」]+", "", text.lower())
+
+
 def _is_continue(text: str) -> bool:
     """'继续' should also match '好！继续吧' - short replies only."""
-    compact = re.sub(r"[\s，。！!？?、,.~…:：]+", "", text.lower())
+    compact = _norm(text)
     if not compact or len(compact) > 10:
         return False
     return any(word in compact for word in CONTINUE_WORDS)
@@ -330,6 +372,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--no-search",
+        action="store_true",
+        help="do not attach the web_search/web_fetch tools",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -373,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             verbose=args.verbose,
             allow_dangerous=args.allow_dangerous,
+            search=not args.no_search,
         ),
         listeners,
         qq_channel=qq_channel,
