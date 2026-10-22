@@ -505,6 +505,19 @@ def run_compact_case() -> None:
     assert "SUMMARY-BODY" in text, text
     assert memory.compact(fake_summarizer).folded == 0, "nothing left to fold"
 
+    small = WindowMemory(
+        goal="batch", config=MemoryConfig(keep_turns=2, compact_chunk=4)
+    )
+    for step in range(1, 4):
+        small.add(
+            Turn(
+                step=step,
+                decision=Decision(thought="t", action=Action("lookup", {})),
+                observation=Observation.success("ok"),
+            )
+        )
+    assert small.compact(lambda turns: "x").folded == 0, "must not fold every turn"
+
 
 def run_store_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:

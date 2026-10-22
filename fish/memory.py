@@ -27,6 +27,7 @@ from .store import Fact, FactStore
 @dataclass(frozen=True)
 class MemoryConfig:
     keep_turns: int = 8
+    compact_chunk: int = 4
     observation_chars: int = 1500
     summary_ratio: float = 0.25
     facts_ratio: float = 0.15
@@ -88,8 +89,9 @@ class WindowMemory(Memory):
 
     def compact(self, summarizer: Summarizer) -> CompactionResult:
         keep = max(1, self._config.keep_turns)
-        if len(self._turns) <= keep:
-            return CompactionResult()
+        chunk = max(1, self._config.compact_chunk)
+        if len(self._turns) < keep + chunk:
+            return CompactionResult()  # batch: avoid a summarizer call every turn
         older = self._turns[: len(self._turns) - keep]
         produced = summarizer(older)
         if isinstance(produced, Summary):
