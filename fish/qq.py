@@ -27,6 +27,7 @@ from .notify import NotifyTool
 
 ROOT = Path(__file__).resolve().parents[1]
 INBOX = ROOT / ".fish" / "inbox"
+OUTBOX = ROOT / ".fish" / "outbox"
 MAX_INLINE = 5 * 1024 * 1024  # platform limit for file_data upload
 _SAFE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
 
@@ -330,6 +331,55 @@ class QQReadFileTool(Tool):
         if len(text) > self._max:
             text = text[: self._max] + "\n...[truncated]"
         return Observation.success(text or "(empty file)")
+
+
+class QQWriteFileTool(Tool):
+    """Create a text file under .fish/outbox so it can be sent afterwards."""
+
+    def __init__(self, root: Path = OUTBOX, max_chars: int = 200_000) -> None:
+        self._root = root.resolve()
+        self._max = max_chars
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="qq_write_file",
+            description=(
+                "Create a text file under .fish/outbox. "
+                "Then call qq_send_file with the absolute path it returns."
+            ),
+            parameters={
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+            idempotent=False,
+            permissions=frozenset({"write"}),
+        )
+
+    def run(self, args: dict, ctx: ToolContext) -> Observation:
+        raw = str(args.get("path") or "").strip()
+        content = str(args.get("content") or "")
+        if not raw:
+            return Observation.failure("path is required")
+        if len(content) > self._max:
+            return Observation.failure(f"content too large (> {self._max} chars)")
+        target = Path(raw)
+        if not target.is_absolute():
+            target = self._root / target.name
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(self._root)
+        except (OSError, ValueError):
+            return Observation.failure("only files under .fish/outbox can be written")
+        try:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            return Observation.failure(f"write failed: {exc}")
+        return Observation.success(f"written: {resolved}")
 
 
 class QQNotifyTool(NotifyTool):

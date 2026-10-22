@@ -536,6 +536,7 @@ def run_qq_file_case() -> None:
         QQReadFileTool,
         QQSender,
         QQSendFileTool,
+        QQWriteFileTool,
         file_type_of,
     )
     from fish.tools import CompositeRegistry
@@ -567,6 +568,20 @@ def run_qq_file_case() -> None:
         assert ok.ok and "hello" in ok.content, ok
         blocked = reader.run({"path": str(outside)}, ToolContext(step=1))
         assert not blocked.ok and "inbox" in blocked.content, blocked
+
+        outbox = Path(tmp) / "outbox"
+        writer = QQWriteFileTool(outbox)
+        written = writer.run(
+            {"path": "note.txt", "content": "hi there"}, ToolContext(step=1)
+        )
+        assert written.ok, written
+        saved = Path(written.content.split("written: ", 1)[-1])
+        assert saved.read_text(encoding="utf-8") == "hi there"
+
+        escape = writer.run(
+            {"path": str(Path(tmp) / "evil.txt"), "content": "x"}, ToolContext(step=1)
+        )
+        assert not escape.ok, "writer must stay inside outbox"
 
     dup = FakeRegistry()
     try:

@@ -1,0 +1,3 @@
+# Runtime dependencies (Python 3.10+).
+# The core agent uses the standard library only; these cover optional channels.
+qq-botpy>=1.2.1        # QQ official bot channel (WebSocket gateway)
