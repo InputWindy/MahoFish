@@ -650,11 +650,12 @@ class WriteRegistry(ToolRegistry):
 def run_approval_case() -> None:
     server = Server(ServerConfig(persist=False), [])
     event = Event("test", "sess-1", "授权", "sess-1")
+    key = server._memory_key(event)
     server.handle(event)
-    assert server._grant_active("sess-1"), "grant keyword must enable writes"
+    assert server._grant_active(key), "grant keyword must enable writes"
 
     server.handle(Event("test", "sess-1", "取消授权", "sess-1"))
-    assert not server._grant_active("sess-1"), "revoke must clear the grant"
+    assert not server._grant_active(key), "revoke must clear the grant"
 
     result = _run(
         ScriptedLLM(
@@ -821,6 +822,44 @@ def run_api_case() -> None:
         server.shutdown()
         server.server_close()
     print("[api] payload validation + auth + roundtrip OK")
+
+
+def run_shared_memory_case() -> None:
+    from fish.domains.messaging import MessagingDomain
+
+    server = Server(ServerConfig(persist=False), [])
+    owner_cases = [
+        Event("popo", "s1", "hi", "s1"),
+        Event("qq", "u1", "hi", "u1", {"kind": "c2c"}),
+        Event("wecom", "u2", "hi", "u2", {"chat_type": "single"}),
+        Event("wechat", "u3", "hi", "u3"),
+    ]
+    for event in owner_cases:
+        assert server._memory_key(event) == "owner", event
+    group_cases = [
+        Event("qq", "g1", "hi", "g1", {"kind": "group"}),
+        Event("wecom", "g2", "hi", "g2", {"chat_type": "group"}),
+    ]
+    for event in group_cases:
+        assert server._memory_key(event).startswith(event.channel), event
+
+    isolated = Server(ServerConfig(persist=False, share_memory=False), [])
+    assert isolated._memory_key(owner_cases[0]) == "s1"
+
+    sent: list[tuple[str, str]] = []
+    domain_pack = MessagingDomain(
+        senders={"qq": lambda target, text: sent.append((target, text)) or "qq"},
+        targets=lambda channel: "qq-target" if channel == "qq" else "",
+    )
+    tool = domain_pack.registry().get("send_message")
+    assert tool is not None
+    ok = tool.run({"channel": "qq", "text": "传话"}, ToolContext(step=1))
+    assert ok.ok and sent == [("qq-target", "传话")], (ok, sent)
+    missing = tool.run({"channel": "wechat", "text": "x"}, ToolContext(step=1))
+    assert not missing.ok, missing
+    unknown = tool.run({"channel": "nope", "text": "x"}, ToolContext(step=1))
+    assert not unknown.ok, unknown
+    print("[shared] owner memory key + cross-channel send OK")
 
 
 def run_checkpoint_case() -> None:
@@ -1002,6 +1041,7 @@ def main() -> int:
     run_wecom_case()
     run_log_rotation_case()
     run_api_case()
+    run_shared_memory_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()

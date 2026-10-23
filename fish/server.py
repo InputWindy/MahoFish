@@ -59,6 +59,7 @@ class ServerConfig:
     dry_run: bool = False
     verbose: bool = False
     search: bool = True
+    share_memory: bool = True
     facts_path: Path | None = None
     sessions_dir: Path | None = None
 
@@ -86,6 +87,7 @@ class Server:
         self._pack = None
         self._qq_domain = None
         self._grants: dict[str, float] = {}
+        self._targets: dict[str, str] = {}
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -123,11 +125,46 @@ class Server:
                 packs.append(self._qq_domain)
             if self._config.search and search_available():
                 packs.append(domain.load("search"))
+            senders = self._senders()
+            if senders:
+                packs.append(
+                    domain.load(
+                        "messaging",
+                        senders=senders,
+                        targets=lambda channel: self._targets.get(channel, ""),
+                    )
+                )
             self._pack = packs[0] if len(packs) == 1 else domain.CompositeDomain(packs)
         except Exception as exc:
             print(f"[server] domain load failed: {exc}", file=sys.stderr, flush=True)
             return None
         return self._pack
+
+    def _memory_key(self, event: Event) -> str:
+        """Private/one-to-one chats share one memory; group chats stay separate."""
+        if not self._config.share_memory:
+            return event.session_id
+        kind = str(event.meta.get("kind") or "")
+        chat_type = str(event.meta.get("chat_type") or "")
+        shared = (
+            event.channel in ("popo", "wechat")
+            or kind == "c2c"
+            or chat_type == "single"
+        )
+        return "owner" if shared else f"{event.channel}:{event.session_id}"
+
+    def _senders(self) -> dict[str, object]:
+        senders: dict[str, object] = {}
+        senders["popo"] = lambda target, text: PopoNotifyTool(
+            receiver=target
+        ).send("MahoFish", text, target)
+        if self._qq is not None:
+            senders["qq"] = lambda target, text: self._qq.send(target, text)
+        if self._wechat is not None:
+            senders["wechat"] = lambda target, text: self._wechat.send(target, text)
+        if self._wecom is not None:
+            senders["wecom"] = lambda target, text: self._wecom.send(target, text)
+        return senders
 
     def _grant_active(self, session: str) -> bool:
         expiry = self._grants.get(session, 0.0)
@@ -162,27 +199,28 @@ class Server:
             return ""
 
         command = _norm(event.text)
+        session_key = self._memory_key(event)
+        if session_key == "owner":
+            self._targets[event.channel] = event.target
         if command in GRANT_WORDS:
-            self._grants[event.session_id] = time.time() + GRANT_TTL
+            self._grants[session_key] = time.time() + GRANT_TTL
             self._reply(
                 event,
                 "已授权写操作 10 分钟。请把刚才的命令再发一次。",
             )
             return ""
         if command in REVOKE_WORDS:
-            self._grants.pop(event.session_id, None)
+            self._grants.pop(session_key, None)
             self._reply(event, "已收回写操作授权。")
             return ""
-        allow_dangerous = self._config.allow_dangerous or self._grant_active(
-            event.session_id
-        )
+        allow_dangerous = self._config.allow_dangerous or self._grant_active(session_key)
 
-        snapshot = self._store.load(event.session_id, keep_turns=8)
+        snapshot = self._store.load(session_key, keep_turns=8)
         goal, continuing = self._resolve_goal(event, snapshot)
         if continuing:
             print("[server] continue: resuming from checkpoint", flush=True)
 
-        memory = self._restore_memory(event, snapshot, goal)
+        memory = self._restore_memory(event, snapshot, goal, session_key)
         pack = self._ensure_pack()
         if pack is None:
             answer = "域装配失败，暂时无法处理。"
@@ -192,7 +230,7 @@ class Server:
             self._qq_domain.set_target(event.target)
 
         observers = (
-            [TurnPersister(self._store, event.session_id)]
+            [TurnPersister(self._store, session_key)]
             if self._config.persist
             else None
         )
@@ -203,7 +241,7 @@ class Server:
             if self._config.persist:
                 progress, next_step = _split_checkpoint(text)
                 self._store.append_checkpoint(
-                    event.session_id, stop, progress, next_step
+                    session_key, stop, progress, next_step
                 )
 
         try:
@@ -241,9 +279,7 @@ class Server:
             print(f"[server] episode failed: {exc}", file=sys.stderr, flush=True)
 
         if self._config.persist and memory.summary:
-            self._store.append_summary(
-                event.session_id, memory.summary, memory.folded
-            )
+            self._store.append_summary(session_key, memory.summary, memory.folded)
         self._reply(event, answer)
         return answer
 
@@ -262,7 +298,9 @@ class Server:
             )
         return f"继续上次未完成的任务：{snapshot.goal or '（无记录）'}", True
 
-    def _restore_memory(self, event: Event, snapshot, goal: str) -> WindowMemory:
+    def _restore_memory(
+        self, event: Event, snapshot, goal: str, session_key: str
+    ) -> WindowMemory:
         memory = WindowMemory(
             goal=goal,
             scope=_scope_of(goal),
@@ -271,7 +309,7 @@ class Server:
         memory.seed(snapshot.summary, snapshot.turns, snapshot.folded)
         memory.set_goal(goal)
         if self._config.persist:
-            self._store.set_goal(event.session_id, goal)
+            self._store.set_goal(session_key, goal)
         return memory
 
     def _reply(self, event: Event, text: str) -> None:
@@ -394,6 +432,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--no-persist", action="store_true")
     parser.add_argument(
+        "--no-shared-memory",
+        action="store_true",
+        help="keep memory per channel instead of one shared owner memory",
+    )
+    parser.add_argument(
         "--allow-dangerous",
         action="store_true",
         help="allow write-side tools (browser click/fill, qq_send_file)",
@@ -469,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             allow_dangerous=args.allow_dangerous,
             search=not args.no_search,
+            share_memory=not args.no_shared_memory,
         ),
         listeners,
         qq_channel=qq_channel,

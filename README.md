@@ -181,6 +181,10 @@ python -m fish.server --verbose --max-steps 8
 
 **会话记忆**：每轮 turn 追加到 `.fish/sessions/<hash>.jsonl`（append-only，坏一行只丢一条）；压缩摘要也落盘，重启直接复用，不重复付摘要费用。恢复时只载入摘要 + 最近 8 轮，控制上下文。
 
+**跨渠道共享记忆**：私聊/单聊（POPO、QQ 私聊、微信、企微单聊）统一映射到 `owner` 会话，所以你在 QQ 说过的事，POPO 里问它也知道；群聊保持独立，避免别人的话污染记忆。用 `--no-shared-memory` 可退回按渠道隔离。
+
+**跨渠道发消息**：新增 `send_message(channel, text[, target])` 工具，比如在 POPO 里说「去 QQ 给我发条消息：会议改到三点」，它会调用 `send_message(channel="qq", ...)`，目标默认是该渠道你最近的会话。写操作，需要先回「授权」。
+
 **断点续做**：episode 非正常结束（预算耗尽 / 模型不可用）时，会额外做一次压缩调用，把「已完成的进度 + 下一步」写成 checkpoint 落盘，并把友好提示回给你：```
 这次没做完（步数预算用完）。
 
