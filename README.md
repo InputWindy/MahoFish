@@ -263,6 +263,35 @@ python -m fish.serve --channels popo,qq,wechat,wecom --backend deepseek
 - 日志按大小轮转：`.fish/server.log`，默认 5MB × 5 份（`--max-mb` / `--backups`）
 - Ctrl+C 会先终止子进程再退出，不留孤儿
 
+## HTTP API（给外部系统调用）
+
+让 DSH、脚本、CI 把任务直接交给 agent，而不是我们去适配别人的插件体系。
+
+```bash
+python -m fish.api --port 8787 --token devtoken   # token 也可用 FISH_API_TOKEN
+```
+
+```bash
+curl -s http://127.0.0.1:8787/v1/health
+curl -s -X POST http://127.0.0.1:8787/v1/run \
+  -H "Authorization: Bearer devtoken" -H "Content-Type: application/json" \
+  -d '{"goal":"打开 bilibili 首页，列出前 3 个视频标题","domain":"browser"}'
+```
+
+响应：
+
+```json
+{"answer":"...","steps":4,"tokens":3913,"seconds":8.9,
+ "stopped_reason":"final","faults":[],"denials":[]}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `domain` | `browser`（默认）/ `none` / `notify` |
+| `max_steps` / `max_tokens` / `timeout` | 有硬上限（40 / 1M / 1800s） |
+| `allow_dangerous` | 是否允许写操作，默认 false |
+| 鉴权 | 设了 token 就必须带 `Authorization: Bearer` |
+
 ## 定时任务
 
 `fish/scheduler.py` 只是一个外层轮询器：到点的 job 跑**一次有界 episode**，然后把结果推给你。agent 循环本身没有"永不停止"模式。

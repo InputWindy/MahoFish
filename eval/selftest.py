@@ -764,6 +764,65 @@ def run_log_rotation_case() -> None:
     print("[log] rotation keeps bounded files")
 
 
+class FakeRunResult:
+    answer = "ok"
+    steps = 2
+    stopped_reason = "final"
+    faults: list = []
+    denials: list = []
+
+    class usage:
+        tokens = 123
+        seconds = 1.5
+
+
+def run_api_case() -> None:
+    import http.client
+    import threading
+
+    from fish.api import handle_payload, make_server
+
+    calls: list = []
+
+    def fake_runner(config):
+        calls.append(config)
+        return FakeRunResult()
+
+    status, body = handle_payload({"goal": "hi"}, fake_runner)
+    assert status == 200 and body["answer"] == "ok", body
+    assert calls[-1].goal == "hi"
+
+    status, _ = handle_payload({"goal": ""}, fake_runner)
+    assert status == 400
+
+    handle_payload({"goal": "x", "max_steps": 999}, fake_runner)
+    assert calls[-1].max_steps == 40, calls[-1].max_steps
+
+    server = make_server("127.0.0.1", 0, fake_runner, "secret")
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/v1/health")
+        assert conn.getresponse().status == 200
+        conn.request("POST", "/v1/run", body='{"goal":"x"}', headers={"Content-Type": "application/json"})
+        assert conn.getresponse().status == 401, "missing token must be rejected"
+        conn.request(
+            "POST",
+            "/v1/run",
+            body='{"goal":"x"}',
+            headers={"Content-Type": "application/json", "Authorization": "Bearer secret"},
+        )
+        response = conn.getresponse()
+        assert response.status == 200, response.status
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+    print("[api] payload validation + auth + roundtrip OK")
+
+
 def run_checkpoint_case() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = SessionStore(tmp)
@@ -942,6 +1001,7 @@ def main() -> int:
     run_wechat_case()
     run_wecom_case()
     run_log_rotation_case()
+    run_api_case()
     run_permission_case()
     run_facts_feedback_case()
     run_checkpoint_case()
